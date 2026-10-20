@@ -4,7 +4,8 @@ The bottom-bar flower button swaps the track list for a music visualizer, as iTu
 visualizer is based on **Geiss HDR** by Ryan Geiss (www.geisswerks.com/geiss_hdr), ported from
 JavaScript and WebGPU to Swift and Metal. Geiss HDR is Apache-2.0.
 
-Status: being built (milestones M0–M5 below). Nothing user-visible ships until M4.
+Status: working in the app (M0–M4). Still to do (M5): a side-by-side check against the original in
+Chrome, a long listening test, and these notes' results.
 
 ## Where the code lives
 
@@ -35,6 +36,21 @@ of Xcode's separately downloaded Metal toolchain.
 
 The animation is tuned for 120 steps a second. On a 60 Hz screen each frame runs two steps, each
 with its own slice of audio.
+
+A `CAMetalDisplayLink` on the main thread runs all of this (`OldTunes/Visualizer/VisualizerRenderLoop.swift`).
+It hands each refresh a free drawable, so the main thread never waits in `nextDrawable()`. One rule
+comes with it: while a link exists on the layer, never set the layer's `maximumDrawableCount`. It
+throws (`CAMetalLayerInvalidOperation`) even when the value doesn't change, and an Objective-C
+exception that unwinds through Swift corrupts the process: it crashed a moment later, somewhere
+unrelated in AppKit. The pixel format, colour space and EDR flag may all change under a running link.
+
+In HDR the layer is `rgba16Float` in `CGColorSpace.extendedSRGB`: the values are sRGB-encoded, the curve
+continued above 1. That is how the original's canvas reads them. The WebGPU spec says a value is "correctly
+encoded for use on a 'srgb'-tagged (approximately perceptually-linear) canvas" only after gamma encoding, and
+that each colour space runs over "an extended range, as defined by the referenced CSS definitions"
+(https://www.w3.org/TR/webgpu/, §3.11). So the palette's top value, 3.0, means about 12.8× SDR white, and the
+screen caps it at its headroom (4× to 16× on a MacBook Pro's XDR screen). It looks very bright, in Chrome too.
+`extendedLinearSRGB` would read 3.0 as only 3× white.
 
 ## Source
 
@@ -114,12 +130,35 @@ Run it on your Mac, from the repo (or worktree) folder the app was built in.
 
 | `OLDTUNES_VIS_MODE` | Checks |
 |---|---|
+| `core` | The sample ring and the host clock, which every other part leans on |
 | `parity` | The ported engine against numbers from the original JavaScript (warp maps, palettes, aligner, AdvectPoint) |
 | `audio` | The tap, the sample ring, the AnalyserNode emulation against Chrome's, the watchdog |
 | `render` | The Metal renderer: HDR and SDR set-up, frame time, Metal validation |
 | `ui` | The button, the menu, full screen, the keys, the Settings checkbox |
-| `cycles` | Fifty on/off cycles, then checks nothing is left behind |
+| `cycles` | Fifty on/off cycles in a small window kept above other windows, then checks nothing is left behind |
 
 Benches tap muted, so they make no sound, unless `OLDTUNES_VIS_AUDIBLE=1`. Before a run:
 `pgrep -lx OldTunes` must print nothing (benches share settings and the log with the real app),
-and the build must be signed "Apple Development: Noah Tsutsui" (team 92N52YB23U).
+and the build must be signed "Apple Development: Noah Tsutsui" (team 92N52YB23U). Unlock the
+screen first: while the Mac is locked no window is visible, so the visualizer draws nothing and
+full screen never finishes, and `ui`, `cycles` and `render` fail.
+
+## Measured
+
+On 2026-10-20, on a MacBook Pro (Apple M2 Max) with its built-in 120 Hz screen, in a Debug build.
+
+| What | Result | Bench |
+|---|---|---|
+| The analyser against Chrome's | Levels within 0.00004 dB; time-domain samples exact (48 frames) | `audio` |
+| The engine against the original JavaScript | All 34 warp modes, the palettes, the aligner and AdvectPoint exact | `parity` |
+| One warp map | 0.53 ms on average, 5.8 ms for the slowest mode; 2.3 ms on one thread | `parity` |
+| One engine step | 0.17 ms on average at 1512×982 | `parity` |
+| GPU time | 0.45 ms a step in HDR at 1512×982 | `render` |
+| In the window | 355 frames in 3 s, 120 steps a second, none skipped | `ui` |
+| At 60 Hz | 60 frames and 120 steps a second: two steps a frame | `ui` |
+| 50 on/off cycles | No taps, aggregate devices or frames left after off; Metal memory flat (13.5 MB in the first ten rounds and the last ten); the extra worker threads gone within 4 s | `cycles` |
+| Building the tap | About 70 ms | `audio` |
+| Permission off, then on (Noah, by hand) | A tap built with System Audio Recording off hears only zeros, so the note appears about 6 s into a song. It clears 13 s after the permission comes back, with the next 30-s retry and no relaunch (tested with a local file). Switching the permission off doesn't silence a tap that's already running; only the next tap goes deaf | by hand |
+
+Still to check with Noah (M5): the picture side by side with the original in Chrome, and a long
+listening test. Done by hand on 2026-10-20: the HDR highlights ("it looked great") and the permission note.

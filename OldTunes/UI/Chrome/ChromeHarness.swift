@@ -337,6 +337,7 @@ enum ChromeHarness {
         bottom.onShuffleToggle = { log.append("shuffle") }
         bottom.onRepeatCycle = { log.append("repeat") }
         bottom.onArtworkToggle = { log.append("artwork") }
+        bottom.onVisualizerToggle = { log.append("visualizer") }
 
         let y = Theme.Metrics.transportCenterY
         Probe.click(window, at: NSPoint(x: 79, y: y))
@@ -415,7 +416,11 @@ enum ChromeHarness {
         for button in bottom.rightGroup {
             Probe.click(window, at: NSPoint(x: button.frame.midX, y: by))
         }
-        check("right group disabled", log.isEmpty && bottom.rightGroup.allSatisfy { !$0.isEnabled }, "callbacks \(log)")
+        // The visualizer button is live once the app enables it (macOS 14.2+); equalizer and eject stay dimmed.
+        let liveRight = bottom.visualizerButton.isEnabled ? ["visualizer"] : []
+        check("right group: only the visualizer answers", log == liveRight
+              && !bottom.equalizerButton.isEnabled && !bottom.ejectButton.isEnabled, "callbacks \(log)")
+        if bottom.isVisualizerOn { bottom.setVisualizerOn(false) }
         bottom.setShuffle(false)
         bottom.setArtworkVisible(false)
 
@@ -436,6 +441,7 @@ enum ChromeHarness {
         bar.onPlayPause = nil; bar.onPrevious = nil; bar.onNext = nil; bar.onVolumeChange = nil
         bar.onSeek = nil; bar.onBrowseToggle = nil
         bottom.onAddFolder = nil; bottom.onShuffleToggle = nil; bottom.onRepeatCycle = nil; bottom.onArtworkToggle = nil
+        bottom.onVisualizerToggle = nil
         bar.update(sampleState())
     }
 

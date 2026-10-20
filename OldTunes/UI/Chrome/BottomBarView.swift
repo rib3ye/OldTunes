@@ -4,15 +4,17 @@ import AppKit
 /// (Add Folder, shuffle, repeat, show/hide artwork), the centred library summary, three buttons on
 /// the right, and the resize grip.
 ///
-/// The right group (equalizer, visualizer, eject) is drawn because the 2005 window had it, but is
-/// disabled: OldTunes has none of those features, and a live button that does nothing is worse
-/// than a dimmed one. Transparent, so the window's metal shows through.
+/// The right group (equalizer, visualizer, eject) is drawn because the 2005 window had it. The
+/// visualizer button works (it swaps the track list for the visualizer, as iTunes 4.9 did) on macOS
+/// 14.2 and later, where the owner enables it; equalizer and eject stay dimmed, because a live button
+/// that does nothing is worse than a dimmed one. Transparent, so the window's metal shows through.
 @MainActor
 final class BottomBarView: NSView {
     var onAddFolder: (() -> Void)?
     var onShuffleToggle: (() -> Void)?
     var onRepeatCycle: (() -> Void)?
     var onArtworkToggle: (() -> Void)?
+    var onVisualizerToggle: (() -> Void)?
 
     let addButton = ChromeBevelButton(glyph: .add)
     let shuffleButton = ChromeBevelButton(glyph: .shuffle)
@@ -27,6 +29,7 @@ final class BottomBarView: NSView {
     private(set) var isShuffleOn = false
     private(set) var repeatMode: RepeatMode = .off
     private(set) var isArtworkVisible = false
+    private(set) var isVisualizerOn = false
 
     /// Local y = window y − 465.
     static let buttonTop = Theme.Metrics.bottomButtonTopInset
@@ -57,6 +60,11 @@ final class BottomBarView: NSView {
             guard let self else { return }
             setArtworkVisible(!isArtworkVisible)
             onArtworkToggle?()
+        }
+        visualizerButton.onClick = { [weak self] in
+            guard let self else { return }
+            setVisualizerOn(!isVisualizerOn)
+            onVisualizerToggle?()
         }
         layoutButtons()
     }
@@ -93,6 +101,12 @@ final class BottomBarView: NSView {
         isArtworkVisible = on
         artworkButton.isLit = on
         artworkButton.glyph = on ? .artworkHide : .artworkShow
+    }
+
+    /// Lit while the visualizer shows in place of the track list.
+    func setVisualizerOn(_ on: Bool) {
+        isVisualizerOn = on
+        visualizerButton.isLit = on
     }
 
     /// iTunes' repeat button cycled off → all → one → off.

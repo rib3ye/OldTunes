@@ -67,6 +67,29 @@ public final class SampleRing: Sendable {
         }
     }
 
+    /// Called from the IOProc when the tap delivers one buffer per channel. Same mix as above.
+    public func writePlanarStereo(left: UnsafePointer<Float>, right: UnsafePointer<Float>, frames: Int,
+                                  firstFrameHostTime: UInt64, sampleRate: Double) {
+        guard frames > 0 else { return }
+        // Unchecked: the closure reads the caller's pointers, which are only used while the lock is held.
+        state.withLockUnchecked { s in
+            if s.stats.sampleRate != sampleRate { Self.restart(&s, sampleRate) }
+            let capacity = s.samples.count
+            var index = Int(s.stats.framesWritten % UInt64(capacity))
+            var nonZero: UInt64 = 0
+            s.samples.withUnsafeMutableBufferPointer { ring in
+                for frame in 0..<frames {
+                    let mono = (left[frame] + right[frame]) * 0.5
+                    if mono != 0 { nonZero += 1 }
+                    ring[index] = mono
+                    index += 1
+                    if index == capacity { index = 0 }
+                }
+            }
+            Self.advance(&s, frames: frames, nonZero: nonZero, firstFrameHostTime: firstFrameHostTime)
+        }
+    }
+
     /// Mono samples, already mixed. For benches and synthetic sources.
     public func writeMono(_ samples: UnsafeBufferPointer<Float>, gain: Float = 1,
                           firstFrameHostTime: UInt64, sampleRate: Double) {

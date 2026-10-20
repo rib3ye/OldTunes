@@ -25,7 +25,7 @@ enum AppearanceHarness {
     private static let restoredKeys = [AppearancePreference.defaultsKey, TrackColumnLayout.defaultsKey,
                                        "OldTunes.TrackList.browserVisible", "OldTunes.TrackList.browserFraction",
                                        "OldTunes.SourceList.expandedFolders", MetalContentView.sourceWidthDefaultsKey,
-                                       SettingsWindowController.frameDefaultsKey]
+                                       SettingsWindowController.frameDefaultsKey, VisualizerPreference.hdrKey]
 
     static func run() async {
         let out = outputDirectory()

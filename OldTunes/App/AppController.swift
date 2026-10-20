@@ -16,6 +16,10 @@ final class AppController: NSObject {
     let windowController = MetalWindowController()
     let sources: SourceListViewController
     let tracks: TrackListViewController
+    /// The track pane's one subview: the track list, and the visualizer when it shows in its place.
+    private let trackStack = NSView()
+    /// The visualizer (bottom-bar flower, Visualizer menu). Made in start(), once the panes exist.
+    private(set) var visualizer: VisualizerController?
 
     private(set) var infoWindows: [GetInfoWindowController] = []
     private var keyMonitor: Any?
@@ -49,7 +53,10 @@ final class AppController: NSObject {
 
     func start() {
         embed(sources.view, in: windowController.sourcePane)
-        embed(tracks.view, in: windowController.trackPane)
+        embed(trackStack, in: windowController.trackPane)
+        embed(tracks.view, in: trackStack)
+        visualizer = VisualizerController(player: player, inlineHost: trackStack, listView: tracks.view)
+        visualizer?.onStateChange = { [weak self] in self?.visualizerChanged() }
         tracks.restoreBrowserVisibility()
         windowController.controlBar.isBrowseOn = tracks.isBrowserVisible
         wireControlBar()
@@ -126,6 +133,8 @@ final class AppController: NSObject {
         bar.onRepeatCycle = { [weak self] in self?.cycleRepeat(nil) }
         bar.onArtworkToggle = { Log.info("artwork pane: not built yet") }
         bar.setArtworkVisible(false)
+        bar.visualizerButton.isEnabled = VisualizerController.isSupported
+        bar.onVisualizerToggle = { [weak self] in self?.toggleVisualizer(nil) }
     }
 
     private func wireLists() {
@@ -186,6 +195,7 @@ final class AppController: NSObject {
     /// The LCD's snap-back arrow: show the playing song in the list it was started from.
     func revealNowPlaying() {
         guard let id = player.state.nowPlaying?.id else { NSSound.beep(); return }
+        visualizer?.setOn(false)
         Task { @MainActor in
             if let scope = playingScope, scope != tracks.query.scope {
                 sources.select(scope)
@@ -238,6 +248,25 @@ final class AppController: NSObject {
     }
 
     @objc func focusSearch(_ sender: Any?) { windowController.controlBar.focusSearch() }
+
+    // MARK: - Visualizer
+
+    /// Visualizer ▸ Turn On/Off Visualizer (⌘T, as in iTunes 4.9), and the bottom-bar flower.
+    @objc func toggleVisualizer(_ sender: Any?) { visualizer?.toggle() }
+
+    /// Visualizer ▸ Full Screen (⇧⌘F; ⌘F is Search here, and ⌃⌘F stays the window's full screen).
+    @objc func toggleVisualizerFullScreen(_ sender: Any?) { visualizer?.toggleFullScreen() }
+
+    /// Visualizer ▸ Show Visualizer Keys, the same list as H.
+    @objc func toggleVisualizerKeys(_ sender: Any?) { visualizer?.toggleKeyList() }
+
+    private func visualizerChanged() {
+        let on = visualizer?.isOn ?? false
+        windowController.bottomBar.setVisualizerOn(on)
+        if !on, windowController.window?.firstResponder == nil || !(windowController.window?.firstResponder is NSText) {
+            windowController.window?.makeFirstResponder(tracks.tableView)
+        }
+    }
 
     @objc func getInfo(_ sender: Any?) { showInfo(for: tracks.selectedIDs) }
 
@@ -584,6 +613,18 @@ final class AppController: NSObject {
             window.insertItem(.separator(), at: 1)
         }
 
+        // iTunes 4.9 kept its visualizer in a menu of its own, between Controls and Advanced.
+        if VisualizerController.isSupported {
+            let visualizerMenu = NSMenu(title: "Visualizer")
+            visualizerMenu.addItem(item("Turn On Visualizer", #selector(toggleVisualizer(_:)), "t"))
+            visualizerMenu.addItem(.separator())
+            // Uppercase F is ⇧⌘F: NSMenu matches a shifted equivalent by its uppercase letter (measured).
+            visualizerMenu.addItem(item("Full Screen", #selector(toggleVisualizerFullScreen(_:)), "F"))
+            visualizerMenu.addItem(.separator())
+            visualizerMenu.addItem(item("Show Visualizer Keys", #selector(toggleVisualizerKeys(_:)), ""))
+            MainMenu.insert(visualizerMenu, into: main)
+        }
+
         let view = NSMenu(title: "View")
         view.addItem(item("Show Browser", #selector(toggleBrowser(_:)), "b"))
         MainMenu.insert(view, into: main)
@@ -604,7 +645,8 @@ final class AppController: NSObject {
             guard event.keyCode == 49,
                   event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
                   !(event.window?.firstResponder is NSText),
-                  event.window === self?.windowController.window
+                  let window = event.window,
+                  window === self?.windowController.window || window === self?.visualizer?.fullScreenWindowForKeys
             else { return event }
             self?.playPause()
             return nil
@@ -635,6 +677,13 @@ extension AppController: NSMenuItemValidation {
             menuItem.title = tracks.isBrowserVisible ? "Hide Browser" : "Show Browser"
         case #selector(playPauseAction(_:)):
             menuItem.title = player.state.isPlaying ? "Pause" : "Play"
+        case #selector(toggleVisualizer(_:)):
+            menuItem.title = visualizer?.isOn == true ? "Turn Off Visualizer" : "Turn On Visualizer"
+        case #selector(toggleVisualizerFullScreen(_:)):
+            menuItem.state = visualizer?.isFullScreen == true ? .on : .off
+        case #selector(toggleVisualizerKeys(_:)):
+            menuItem.title = visualizer?.view?.isShowingKeyList == true ? "Hide Visualizer Keys" : "Show Visualizer Keys"
+            return visualizer?.isOn == true
         default:
             break
         }

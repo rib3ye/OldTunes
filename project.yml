@@ -28,6 +28,11 @@ targets:
     platform: macOS
     sources:
       - path: OldTunes
+      # Geiss HDR's licence and NOTICE travel inside the app, as Apache-2.0 §4(a) and (d) ask.
+      - path: VisualizerCore/LICENSE.txt
+        buildPhase: resources
+      - path: VisualizerCore/NOTICE.txt
+        buildPhase: resources
     dependencies:
       - package: GRDB
         product: GRDB
