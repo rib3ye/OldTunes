@@ -1,0 +1,15 @@
+# Xcode
+*.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+# macOS
+.DS_Store
+# Secrets (MusicKit keys must never be committed)
+*.p8
+
+# Claude Code worktrees and local state
+.claude/

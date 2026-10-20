@@ -1,0 +1,151 @@
+# OldTunes
+
+A Mac music player that looks like iTunes 4.9 (2005, brushed metal) and plays your whole
+Apple Music / iCloud Music Library — including songs that were never downloaded — plus music
+files on this Mac.
+
+![OldTunes playing a cloud song](docs/screenshot.png)
+
+## What it does
+
+- **Plays everything in your library.** Cloud-only songs stream through MusicKit; files on
+  this Mac play through AVFoundation. One queue covers both.
+- **Instant search** over every song, cloud or local, including the middle of words
+  ("nderw" finds "Underworld").
+- **Sort** by clicking a column header: Name, Artist, Album, Date Added, Time, Genre. Click
+  again to reverse. OldTunes keeps the last sort you clicked, even after you quit. Playlists
+  still open in their own order, and the list goes back to your sort when you leave one.
+- **Shuffle** and **repeat** (off / all / one) from the buttons under the source list.
+- **Get Info** (⌘I) reads and edits tags. Songs in your Music library are saved through the
+  Music app, which also updates the song's file if it has one, so Music and OldTunes always
+  agree. Songs from added folders are rewritten in place safely (temp copy, then an atomic swap).
+- **Checkboxes** next to each song work like iTunes: unchecked songs are skipped when playing
+  through a list or shuffling, but still play if you double-click them. ⌘-click checks or
+  unchecks every song in the list.
+- **Add Folder to Library** (⌘O or the + button) adds folders of music from any drive.
+  Tick **Also add to the Music app** in the panel to give the songs to Music too. With Sync
+  Library on, Music then matches or uploads them to your iCloud Music Library, so they reach
+  your other devices. Each song still shows once in OldTunes. Music doesn't take every kind of
+  audio file; OldTunes keeps the ones it turns down and lists them when it's done. The box
+  stays the way you left it.
+- **On This Mac** in the source list shows only songs with a file on this Mac.
+- Your Music playlists appear in the source list. The **Browse** button opens the
+  Genre / Artist / Album browser.
+- **Right-click a playlist** for New Playlist, New Playlist Folder, Rename, Duplicate and
+  Delete. A new playlist goes inside the folder you clicked (or beside the playlist), and its
+  name opens for typing, like iTunes. Return renames the selected playlist; Delete deletes it
+  after asking. Each change is made in the Music app, so Sync Library carries it to your other
+  devices. Duplicate is for plain playlists only: a copy of a smart playlist's songs would
+  lose its rules.
+- **Light or dark.** OldTunes ▸ Settings… (⌘,) picks Light (the 2005 look), Dark, or Match
+  System, which follows System Settings ▸ Appearance and switches when your Mac does. Dark is
+  "Graphite": smoked brushed metal, and the LCD in its night mode, dark glass with lit sage
+  letters. Match System is the default.
+
+## Signing in
+
+OldTunes uses the Apple Account already signed in on this Mac (the one the Music app uses).
+The first launch asks for **Media & Apple Music** access; click Allow. If you said no, turn
+OldTunes on in System Settings ▸ Privacy & Security ▸ Media & Apple Music, then quit and
+reopen OldTunes. macOS only applies the change after a relaunch.
+
+The first time you save tags for a song in your Music library, add a folder with **Also
+add to the Music app** ticked, or change a playlist, macOS asks whether OldTunes may control
+Music. OldTunes uses that permission only to save tags, add songs and change playlists; it
+never tells Music to play.
+
+## Build and run
+
+On your Mac, in the folder you cloned this repo into (the one with `project.yml`). Needs
+Xcode 27 and XcodeGen (`brew install xcodegen`):
+
+```bash
+xcodegen generate && xcodebuild -project OldTunes.xcodeproj -scheme OldTunes -configuration Debug -derivedDataPath build/dd -allowProvisioningUpdates build
+```
+
+Then open the app, on your Mac, from the same directory:
+
+```bash
+open build/dd/Build/Products/Debug/OldTunes.app
+```
+
+Builds are signed as "Apple Development: Noah Tsutsui", team 92N52YB23U. Never ad-hoc sign
+(`codesign -s -`): the signature changes every build and macOS forgets the library permission.
+
+`project.yml` is the source of truth; the `.xcodeproj` is generated and not committed.
+
+## Keyboard
+
+| Key | Does |
+|---|---|
+| Space | Play / pause (except while typing) |
+| Return / double-click | Play the selected song |
+| Return (source list) | Rename the selected playlist; Escape cancels |
+| Delete (source list) | Delete the selected playlist (asks first) |
+| ⌘→ / ⌘← | Next / previous song (previous restarts the song if more than 3 s in) |
+| ⌘↑ / ⌘↓ | Volume up / down |
+| ⌘F | Search |
+| ⌘I | Get Info |
+| ⌘B | Show / hide the browser |
+| ⌘O | Add Folder to Library |
+| ⌘, | Settings (Light, Dark, Match System) |
+| ⌘1 | Bring back the main window after closing it (music keeps playing) |
+
+## Known limits
+
+- **Volume during cloud songs moves the Mac's volume.** Apple's MusicKit has no app-level
+  volume on macOS, so the slider controls the system output while a cloud song plays, and
+  OldTunes' own volume while a file plays.
+- **Media keys right as a cloud song starts.** For about 0.15 s after a cloud song starts,
+  a play/pause or next key can reach MusicKit's own player and pause the song.
+- **No AirPlay or crossfade** for cloud songs (MusicKit doesn't offer them on macOS).
+- **No downloading** cloud songs to this Mac; MusicKit on macOS can't add or download.
+- **Equalizer, visualizer and eject** buttons are drawn for looks and do nothing.
+- **Playlists can't be edited song by song yet**, and smart playlists' rules can't be
+  changed: the source list makes, renames, duplicates and deletes whole playlists only.
+  Duplicate copies a playlist one song at a time through Music, so a long one takes a while.
+- **Catalog fallback** (playing a song by its Apple Music catalog id when the library copy
+  can't be found) needs the MusicKit App Service enabled for `com.noahtsutsui.oldtunes` at
+  developer.apple.com ▸ Identifiers. Library playback works without it.
+
+## For developers
+
+- `docs/RESEARCH.md` — the spec: every API decision, measured on this Mac, plus the
+  pixel-sampled iTunes 4.9 colors and metrics.
+- `tools/make-app-icon.swift` — draws the app icon (the iTunes 7–9 disc and note, 2006–2010,
+  on a dark grey tile) into `OldTunes/App/Assets.xcassets`. The tile keeps macOS 26 and later
+  from shrinking the icon onto a light gray one. After changing it, run
+  `swift tools/make-app-icon.swift` on your Mac from the repo root.
+- `OldTunes/Model/Contracts.swift` — the protocols between modules. Only
+  `OldTunes/App/AppController.swift` wires concrete types together.
+- Test benches: launch with `open -n --env OLDTUNES_HARNESS=<name> …/OldTunes.app` where
+  `<name>` is `smoke` (end to end), `library`, `playback`, `metadata`, `chrome`, `lists`,
+  `appearance` (light and dark, with an invented library), or `authcheck`.
+  `OLDTUNES_SNAPSHOT=/path.png` renders the window to a PNG; `OLDTUNES_DB_PATH` points the
+  index somewhere else. Test benches run in Light; `OLDTUNES_APPEARANCE=dark` runs one in the
+  dark without changing the saved setting.
+
+  The `library` bench runs only when `OLDTUNES_DB_PATH` contains `/scratchpad/evidence/library/`
+  or `/scratchpad/fixes/library/`, and it adds a folder of invented audio files that must
+  already sit next to that index. `tools/make-library-fixtures.sh` makes them; run it before the
+  first library run in each new evidence folder (it needs `brew install ffmpeg flac lame`). On
+  your Mac, from the repo root (the folder you built in):
+
+  ```bash
+  tools/make-library-fixtures.sh /tmp/scratchpad/evidence/library
+  open -n -W --env OLDTUNES_HARNESS=library --env OLDTUNES_DB_PATH=/tmp/scratchpad/evidence/library/index.sqlite build/dd/Build/Products/Debug/OldTunes.app
+  ```
+
+  The bench quits by itself; its last log line is `library harness: SUMMARY …`.
+- `OLDTUNES_LISTS_MODE=playlists` runs only the `lists` bench's playlist-command checks (the
+  right-click menu, renaming in place, Delete, and the index edits behind them). It uses an
+  invented library in a scratch index, never Music.
+- Three live checks change the real Music library, so they run only with the library owner's
+  go-ahead: `musictag` (saves one comment through Music, then puts it back), `musicadd`
+  (adds an invented test tone through Add Folder's Music option; `OLDTUNES_MUSICADD_REMOVE`
+  takes it back out) and `musicplaylists` (makes, renames, duplicates and deletes “OldTunes
+  Test” playlists, then checks they're all gone). The headers of
+  `OldTunes/App/MusicTagLiveTest.swift`, `OldTunes/App/MusicAddLiveTest.swift` and
+  `OldTunes/App/MusicPlaylistLiveTest.swift` say how to run them.
+- `docs/RESEARCH.md` §7.7 — the dark ("Graphite") colors and how the switch works.
+- Logs: `~/Library/Logs/OldTunes/oldtunes.log` (Pacific time).

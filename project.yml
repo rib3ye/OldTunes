@@ -1,0 +1,59 @@
+# Generate the Xcode project with:  xcodegen generate
+# The .xcodeproj is build output and is gitignored; this file is the source of truth.
+name: OldTunes
+options:
+  bundleIdPrefix: com.noahtsutsui
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    exactVersion: 7.11.1
+  SFBAudioEngine:
+    url: https://github.com/sbooth/SFBAudioEngine
+    exactVersion: 0.14.0
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: 92N52YB23U
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    DEAD_CODE_STRIPPING: YES
+targets:
+  OldTunes:
+    type: application
+    platform: macOS
+    sources:
+      - path: OldTunes
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      - package: SFBAudioEngine
+        product: SFBAudioEngine
+      - sdk: iTunesLibrary.framework
+      - sdk: MusicKit.framework
+      - sdk: ScriptingBridge.framework
+    info:
+      path: OldTunes/App/Info.plist
+      properties:
+        CFBundleDisplayName: OldTunes
+        CFBundleName: OldTunes
+        LSApplicationCategoryType: public.app-category.music
+        NSPrincipalClass: NSApplication
+        NSHighResolutionCapable: true
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSAppleMusicUsageDescription: OldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.
+        NSAppleEventsUsageDescription: OldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, and to make, rename and delete the playlists you change in OldTunes.
+        NSAudioCaptureUsageDescription: OldTunes reads the sound of the songs it plays, so a visualizer can move with the music.
+    entitlements:
+      path: OldTunes/App/OldTunes.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.automation.apple-events: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.noahtsutsui.oldtunes
+        PRODUCT_NAME: OldTunes
