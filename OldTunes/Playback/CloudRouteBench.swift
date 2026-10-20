@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import MusicKit
+import VisualizerCore
 
 /// OLDTUNES_PLAYBACK_MODE=route — harness-only: what CloudAudioRoute does with real iCloud
 /// songs, played through the app's own index and PlaybackCoordinator (OLDTUNES_DB_PATH, inside a
@@ -13,7 +14,9 @@ import MusicKit
 /// - a route without the System Audio Recording permission (simulated) gives up and lets the song
 ///   play directly, hands the slider back to the Mac's volume, and routes again from the next song
 ///   once it has heard sound. The silence watch is on here even when the permission was granted at
-///   launch, which turns it off in the app.
+///   launch, which turns it off in the app;
+/// - the visualizer's tap, made as VisualizerController makes it, takes OldTunes alone while the route
+///   plays the song out (so it hears the song once), and RemotePlayerService again while it doesn't.
 ///
 /// Two muted taps keep the run silent and do the measuring: one on OldTunes, which hears what the
 /// route plays out, and one on RemotePlayerService, which hears the song as MusicKit renders it.
@@ -73,6 +76,16 @@ enum CloudRouteBench {
             await recordBoth(own, remote, seconds: 10, to: URL(fileURLWithPath: dir, isDirectory: true), suffix: "")
         }
 
+        // The visualizer's tap, muted like every tap here.
+        let ring = SampleRing()
+        let visualizer = VisualizerAudio(ring: ring, player: player, muted: true,
+                                         cloudRouted: { [weak player] in player?.cloud.route?.mode == .routing }) { _ in }
+        defer { visualizer.stop() }
+        visualizer.start()
+        _ = await AudioABBench.waitUntil(5) { visualizer.tap.status.isRunning }
+        await visualizerTaps("the visualizer's tap takes OldTunes alone while the route plays the song out, and hears it",
+                             remotePlayer: false, visualizer, ring, me: me)
+
         // Off and on in the middle of a song.
         player.setSoundCheck(false)
         try? await Task.sleep(for: .milliseconds(300))
@@ -122,6 +135,8 @@ enum CloudRouteBench {
         await directly("then the song plays straight from RemotePlayerService", own, remote, player)
         check("and the slider moves the Mac's volume again, as it must without a route", !player.cloud.ownsVolume,
               AudioABBench.routeStatus(player.cloud))
+        _ = await AudioABBench.waitUntil(3) { visualizer.tap.status.remotePlayerTapped }
+        await visualizerTaps("and the visualizer's tap takes RemotePlayerService again", remotePlayer: true, visualizer, ring, me: me)
 
         // It heard the song while listening, so the next song is routed again.
         player.next()
@@ -131,6 +146,8 @@ enum CloudRouteBench {
         check("having heard sound, the route routes the next song again", player.cloud.route?.mode == .routing,
               AudioABBench.routeStatus(player.cloud))
         await compare("and plays it out times its gain", own, remote, gain: louder, player)
+        _ = await AudioABBench.waitUntil(3) { !visualizer.tap.status.remotePlayerTapped }
+        await visualizerTaps("and the visualizer's tap leaves RemotePlayerService out again", remotePlayer: false, visualizer, ring, me: me)
 
         player.stop()
         try? await Task.sleep(for: .milliseconds(400))
@@ -216,6 +233,19 @@ enum CloudRouteBench {
         check(name, rendered > -60 && abs(out - rendered - expected) < 0.3,
               "OldTunes \(f(out)) dBFS, RemotePlayerService \(f(rendered)) dBFS: \(f(out - rendered)) dB, "
               + "expected \(f(expected)) dB; \(AudioABBench.routeStatus(player.cloud))")
+    }
+
+    /// What the visualizer's tap holds: OldTunes, plus our RemotePlayerService when `remotePlayer`; and
+    /// that it hears the song.
+    private static func visualizerTaps(_ name: String, remotePlayer: Bool, _ visualizer: VisualizerAudio, _ ring: SampleRing,
+                                       me: pid_t) async {
+        let before = ring.stats.nonZeroFrames
+        try? await Task.sleep(for: .seconds(1))
+        let tapped = visualizer.tap.status.tapped
+        let heard = ring.stats.nonZeroFrames - before
+        check(name, tapped.contains { $0.pid == me } && tapped.count == (remotePlayer ? 2 : 1)
+              && visualizer.tap.status.remotePlayerTapped == remotePlayer && heard > 0,
+              "tapped \(tapped), \(heard) non-zero frames in 1 s")
     }
 
     /// OLDTUNES_ROUTE_DIR: what RemotePlayerService rendered (rendered.wav) and what the route played
