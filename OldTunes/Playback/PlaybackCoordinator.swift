@@ -66,9 +66,10 @@ final class PlaybackCoordinator: PlaybackControlling {
     private var pendingResume: (any Transport)?
     private var loadTask: Task<Void, Never>?
     private var observers: [UUID: @MainActor (PlaybackState) -> Void] = [:]
-    /// The local player's own volume. Cloud songs use the output device's volume instead, so the
-    /// slider shows whichever one it is controlling.
-    private var localVolume: Float = 0.75
+    /// OldTunes's own volume, the slider's, for files and for iCloud songs alike. Only when
+    /// CloudTransport can't set an iCloud song's level itself (no System Audio Recording
+    /// permission) does the slider move the Mac's volume during that song, and show it.
+    private(set) var appVolume: Float = 0.75
     private var ticks = 0
     /// When to take the media keys back after MusicKit starts playing, in seconds. Measured with
     /// the Now Playing pid at 25 ms resolution: MusicKit's player takes over 0.05–0.08 s after it
@@ -85,7 +86,8 @@ final class PlaybackCoordinator: PlaybackControlling {
         self.library = library
         self.resolver = resolver
         self.cloudAuthorization = cloudAuthorization
-        local.volume = localVolume
+        local.volume = appVolume
+        cloud.volume = appVolume
         for transport in [local, cloud] as [any Transport] {
             transport.onFinish = { [weak self, weak transport] in
                 guard let self, let transport else { return }
@@ -296,13 +298,22 @@ final class PlaybackCoordinator: PlaybackControlling {
 
     func setVolume(_ volume: Float) {
         let v = min(max(volume, 0), 1)
-        if (active ?? claimed) === cloud {
-            cloud.volume = v
+        if (active ?? claimed) === cloud, !cloud.ownsVolume {
+            cloud.deviceVolume = v
         } else {
-            localVolume = v
+            appVolume = v
             local.volume = v
+            cloud.volume = v
         }
         state.volume = v
+    }
+
+    /// Takes effect at once, on the song playing too.
+    func setSoundCheck(_ on: Bool) {
+        guard on != local.isSoundCheckOn else { return }
+        local.isSoundCheckOn = on
+        cloud.isSoundCheckOn = on
+        Log.info("playback: Sound Check \(on ? "on" : "off")")
     }
 
     // MARK: Song changes
@@ -466,6 +477,8 @@ final class PlaybackCoordinator: PlaybackControlling {
         var reason = "it is not on this Mac and is not in your iCloud Music Library."
         if let url = track.fileURL, FileManager.default.fileExists(atPath: url.path) {
             show()
+            // Before the load: a preloaded file starts sounding the moment load() advances to it.
+            local.soundCheckGain = SoundCheck.gain(energy: track.soundCheckEnergy)
             switch await start(.local(url), on: local, generation: gen) {
             case .failed(let why): reason = why
             case let outcome: return outcome
@@ -489,6 +502,7 @@ final class PlaybackCoordinator: PlaybackControlling {
         guard gen == generation else { return .superseded }
         guard let song else { return .failed(reason) }
         show()
+        cloud.soundCheckGain = SoundCheck.gain(energy: track.soundCheckEnergy)
         return await start(.cloud(song), on: cloud, generation: gen)
     }
 
@@ -501,7 +515,7 @@ final class PlaybackCoordinator: PlaybackControlling {
         do {
             try await transport.load(playable)
             guard gen == generation else { return abandon(transport) }
-            if transport === local { local.volume = localVolume }
+            if transport === local { local.volume = appVolume }
             if playWhenLoaded {
                 try await transport.play()
                 guard gen == generation else { return abandon(transport) }
@@ -533,8 +547,9 @@ final class PlaybackCoordinator: PlaybackControlling {
         if transport.duration > 0 { s.duration = transport.duration }
         // MusicKit's playbackTime trails a seek by a tick.
         s.position = landed ?? transport.position
-        // The slider shows what it controls: the device volume for cloud songs.
-        s.volume = transport === cloud ? cloud.volume : localVolume
+        // The slider shows what it controls: OldTunes's own volume, or the Mac's for an iCloud
+        // song OldTunes can't set the level of.
+        s.volume = transport === cloud && !cloud.ownsVolume ? cloud.deviceVolume : appVolume
         // Clears a reason left from an earlier song: only this start's skips are news.
         s.lastError = skips?.message
         state = s
@@ -708,8 +723,8 @@ final class PlaybackCoordinator: PlaybackControlling {
         var next = state
         next.position = min(transport.position, state.duration > 0 ? state.duration : .infinity)
         next.isPlaying = transport.isPlaying || pendingResume === transport
-        if transport === cloud, ticks % 5 == 0 {
-            next.volume = cloud.volume
+        if transport === cloud, !cloud.ownsVolume, ticks % 5 == 0 {
+            next.volume = cloud.deviceVolume
         }
         if next != state {
             state = next

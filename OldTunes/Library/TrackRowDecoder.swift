@@ -18,6 +18,7 @@ enum TrackRowDecoder {
         "is_compilation",                                                                     // 33
         // The checkbox shown: OldTunes' own choice when there is one, else the source's.
         "COALESCE(checked_override, is_checked)",                                             // 34
+        "sound_check_energy",                                                                 // 35
     ]
     static let columnList = columns.joined(separator: ", ")
 
@@ -53,6 +54,7 @@ enum TrackRowDecoder {
             // Only a file that was on disk at ingest is offered for playback; a missing one is not.
             fileURL: bucket == .local ? path.map { URL(fileURLWithPath: $0) } : nil,
             isCompilation: bool(33),
-            isChecked: bool(34))
+            isChecked: bool(34),
+            soundCheckEnergy: int(35))
     }
 }

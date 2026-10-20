@@ -80,6 +80,7 @@ final class LibraryHarnessBench {
             try await checkBrowserCaseVariants()
             try await checkTrackDecoding()
             try await checkCompilationDecoding()
+            try await checkSoundCheck()
             try await checkPlaylistOrder()
             try await checkCloudSongs()
             try await checkArtworkAndLocalFiles()

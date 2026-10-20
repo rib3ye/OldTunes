@@ -106,6 +106,15 @@ actor ITLibSource {
         return out
     }
 
+    /// Music's Sound Check value for every song, by persistent id (0 where Music has none).
+    func musicSoundCheckEnergies() throws -> [Int64: Int] {
+        var out: [Int64: Int] = [:]
+        for item in try currentLibrary().allMediaItems where item.mediaKind == .kindSong {
+            out[Int64(bitPattern: item.persistentID.uint64Value)] = item.volumeNormalizationEnergy
+        }
+        return out
+    }
+
     /// The open library as last loaded, without asking it to re-read Music's database.
     private func currentLibrary() throws -> ITLibrary {
         if let library { return library }
@@ -166,6 +175,7 @@ actor ITLibSource {
         r.bitRate = item.bitrate
         r.sampleRate = item.sampleRate
         r.fileSize = Int64(clamping: item.fileSize)
+        r.soundCheckEnergy = item.volumeNormalizationEnergy
 
         // Classified once here (§0): only a file that is really on disk counts as local.
         if item.locationType == .file, let url = item.location {

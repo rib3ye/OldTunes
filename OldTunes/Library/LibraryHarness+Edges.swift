@@ -280,7 +280,8 @@ extension LibraryHarnessBench {
                               isCompilation: row["is_compilation"],
                               // OldTunes' own choice wins over the ingested one. Optional reads so
                               // this also runs against an index from before those columns existed.
-                              isChecked: (row["checked_override"] as Bool?) ?? (row["is_checked"] as Bool?) ?? true)
+                              isChecked: (row["checked_override"] as Bool?) ?? (row["is_checked"] as Bool?) ?? true,
+                              soundCheckEnergy: (row["sound_check_energy"] as Int?) ?? 0)
                 out[t.id] = t
             }
             return out

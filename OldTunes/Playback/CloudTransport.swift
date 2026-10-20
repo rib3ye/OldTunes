@@ -6,6 +6,11 @@ import MusicKit
 /// The MusicKit queue only ever holds one song, with shuffle and repeat forced off, so the player
 /// cannot move on by itself and "now playing" cannot drift from what is audible. MusicKit gives no
 /// end-of-song callback, so the end is detected from the 10 Hz clock by CloudEndDetector.
+///
+/// MusicKit has no volume on macOS and plays the song in another process, so every song is played
+/// out again through CloudAudioRoute, which sets its level: OldTunes's own volume, times the song's
+/// Sound Check gain when that is on. Without the System Audio Recording permission there is no
+/// route; the song plays at its own level and the slider moves the Mac's volume instead.
 @MainActor
 final class CloudTransport: Transport {
     var onFinish: (() -> Void)?
@@ -23,6 +28,23 @@ final class CloudTransport: Transport {
     /// fails for some uploaded songs, without touching MusicKit, so that path can be tested on
     /// demand. The failing set shifts from run to run on the real library.
     var simulatedPrepareFailure: ((Song) -> (any Error)?)?
+
+    /// Settings ▸ Sound Check; it changes the song playing too.
+    var isSoundCheckOn = false {
+        didSet { applyGain() }
+    }
+    /// The Sound Check gain of the song being loaded or played, as a factor (SoundCheck). The
+    /// coordinator sets it before each load.
+    var soundCheckGain: Float = 1 {
+        didSet { applyGain() }
+    }
+    /// Made at the first song, unless the System Audio Recording permission was denied before
+    /// launch. Internal for the harness.
+    private(set) var route: CloudAudioRoute?
+    /// Whether OldTunes sets the song's level itself: true unless there is no route, or the route
+    /// went back to only listening because its tap heard nothing. When false, the slider moves the
+    /// Mac's volume (deviceVolume), as before there was a route.
+    var ownsVolume: Bool { AudioCapturePermission.atLaunch != .denied && route?.mode != .listening }
 
     private(set) var duration: TimeInterval = 0
     /// False until the first load, so a local-only session never starts MusicKit's player service.
@@ -42,23 +64,38 @@ final class CloudTransport: Transport {
     /// True while awaiting MusicKit's play(), however long that takes.
     private var starting = false
     private var musicKitWasPlaying = false
-    private var volumeCache: Float = 0.75
+    private var appVolume: Float = 0.75
+    private var deviceVolumeCache: Float = 0.75
 
     var position: TimeInterval { loaded ? max(0, ApplicationMusicPlayer.shared.playbackTime) : 0 }
     var isPlaying: Bool { loaded && wantsPlay }
 
-    /// The default output device's volume. See OutputDeviceVolume for why.
+    /// OldTunes's own volume, which the route plays the song out at.
     var volume: Float {
+        get { appVolume }
+        set {
+            appVolume = min(max(newValue, 0), 1)
+            applyGain()
+        }
+    }
+
+    /// The default output device's volume, which the slider moves when OldTunes can't set the
+    /// song's level itself (ownsVolume). See OutputDeviceVolume.
+    var deviceVolume: Float {
         get {
-            if let v = OutputDeviceVolume.read() { volumeCache = v }
-            return volumeCache
+            if let v = OutputDeviceVolume.read() { deviceVolumeCache = v }
+            return deviceVolumeCache
         }
         set {
-            volumeCache = min(max(newValue, 0), 1)
-            if !OutputDeviceVolume.write(volumeCache) {
+            deviceVolumeCache = min(max(newValue, 0), 1)
+            if !OutputDeviceVolume.write(deviceVolumeCache) {
                 Log.error("cloud volume: the default output device has no settable volume")
             }
         }
+    }
+
+    private func applyGain() {
+        route?.gain = appVolume * (isSoundCheckOn ? soundCheckGain : 1)
     }
 
     func load(_ what: Playable) async throws {
@@ -87,7 +124,34 @@ final class CloudTransport: Transport {
         settleFrom = .now
         end = CloudEndDetector()
         try await withTimeout(20) { @MainActor in try await ApplicationMusicPlayer.shared.prepareToPlay() }
+        // After prepareToPlay, which is when RemotePlayerService exists to be tapped, and before
+        // play(), so the song is routed from its first sample.
+        await startRoute()
     }
+
+    /// Starts the route for the loaded song, waiting at most 1.5 s. Only the first tap a Mac ever
+    /// sees takes longer, because it waits for the permission prompt; the song then starts at its
+    /// own level, and the route takes over once it is built.
+    private func startRoute() async {
+        guard AudioCapturePermission.atLaunch != .denied else {
+            if !toldNoRoute {
+                toldNoRoute = true
+                Log.info("cloud: System Audio Recording is off for OldTunes, so iCloud songs play at their own level "
+                         + "and the volume slider moves the Mac's volume during them")
+            }
+            return
+        }
+        let route = self.route ?? CloudAudioRoute()
+        self.route = route
+        applyGain()
+        do {
+            try await withTimeout(1.5) { @MainActor in await route.start() }
+        } catch {
+            Log.info("cloud: the route is still being made; this song starts at its own level")
+        }
+    }
+
+    private var toldNoRoute = false
 
     func play() async throws {
         guard loaded else { throw TransportError.notPlayable }
@@ -133,6 +197,9 @@ final class CloudTransport: Transport {
         endRequested = false
         musicKitWasPlaying = false
         duration = 0
+        // Nothing to play out until the next song; this also gives RemotePlayerService its own
+        // output back.
+        route?.pause()
     }
 
     func seek(to seconds: TimeInterval) {
@@ -157,6 +224,7 @@ final class CloudTransport: Transport {
         let status = player.state.playbackStatus
         if status == .playing, !musicKitWasPlaying { onMusicKitStartedPlaying?() }
         musicKitWasPlaying = status == .playing
+        route?.watch(playing: status == .playing, position: max(0, player.playbackTime))
         guard !finished else { return }
         if endRequested, wantsPlay {
             endRequested = false

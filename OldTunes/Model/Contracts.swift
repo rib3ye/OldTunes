@@ -259,6 +259,8 @@ protocol PlaybackControlling: AnyObject {
     func seek(to seconds: TimeInterval)
     func stop()
     func setVolume(_ volume: Float)
+    /// Settings ▸ Sound Check: play each song at the level Music measured for it.
+    func setSoundCheck(_ on: Bool)
     func setShuffle(_ on: Bool)
     func setRepeat(_ mode: RepeatMode)
 }
