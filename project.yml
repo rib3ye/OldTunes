@@ -36,6 +36,10 @@ targets:
       - sdk: iTunesLibrary.framework
       - sdk: MusicKit.framework
       - sdk: ScriptingBridge.framework
+      - target: VisualizerCore
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
+      - sdk: Accelerate.framework
     info:
       path: OldTunes/App/Info.plist
       properties:
@@ -57,3 +61,24 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noahtsutsui.oldtunes
         PRODUCT_NAME: OldTunes
+  # The visualizer: Geiss HDR's engine and shaders ported to Swift and Metal, plus the audio
+  # analysis that feeds it (docs/VISUALIZER.md). Its own target so it is optimized in every
+  # configuration: the engine is numeric Swift, and at -Onone one warp map takes seconds.
+  VisualizerCore:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: VisualizerCore
+        excludes:
+          - "*.txt"
+          - "*.md"
+    settings:
+      base:
+        PRODUCT_NAME: VisualizerCore
+        SWIFT_OPTIMIZATION_LEVEL: "-O"
+        SWIFT_COMPILATION_MODE: wholemodule
+        ENABLE_TESTABILITY: NO
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          SWIFT_COMPILATION_MODE: wholemodule

@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "chrome":    await ChromeHarness.run()
             case "lists":     await ListsHarness.run()
             case "appearance": await AppearanceHarness.run()
+            case "visualizer": await VisualizerHarness.run()
             case "smoke":     await AppAssembly.launch(smokeTest: true)
             case "musictag":  await MusicTagLiveTest.run()
             case "musicadd":  await MusicAddLiveTest.run()
