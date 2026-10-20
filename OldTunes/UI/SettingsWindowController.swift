@@ -1,10 +1,10 @@
 import AppKit
 
-/// Settings (⌘,): the Appearance choice and Sound Check, in a 10.4 pinstriped dialog built from
-/// the same Aqua pieces as Get Info. iTunes 4.9 called this window Preferences, but macOS renames
+/// Settings (⌘,): the Appearance choice, Sound Check and the visualizer's HDR switch, in a 10.4
+/// pinstriped dialog built from the same Aqua pieces as Get Info. iTunes 4.9 called this window Preferences, but macOS renames
 /// the menu item to "Settings…" whatever the app asks for, so the window carries the name the menu
 /// gives it. iTunes' Preferences had Cancel and OK, so this does too: picking an appearance or
-/// clicking Sound Check takes effect at once, OK keeps it, and Cancel, Escape or the close button
+/// clicking a checkbox takes effect at once, OK keeps it, and Cancel, Escape or the close button
 /// put back what was on when the window opened.
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
@@ -28,11 +28,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let radios: [(mode: AppearanceMode, button: AquaRadioButton)]
     /// Music's own words, from its Settings ▸ Playback.
     let soundCheckBox = AquaCheckbox(title: "Sound Check", font: AquaStyle.controlFont)
+    /// Visualizer ▸ HDR. Only on macOS 14.2 and later, where the visualizer exists.
+    let hdrCheckbox = AquaCheckbox(title: "Use HDR when the screen supports it", font: AquaStyle.controlFont)
     let okButton = AquaButton(title: "OK", isDefault: true)
     let cancelButton = AquaButton(title: "Cancel")
     /// What was applied when the window opened; Cancel goes back to it.
     private var modeAtOpen: AppearanceMode = .system
     private var soundCheckAtOpen = false
+    private var hdrAtOpen = true
     private(set) var picked: AppearanceMode = .system
 
     // Flipped window points, in the Get Info window's proportions (GetInfoLayout).
@@ -43,7 +46,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private static let radioPitch: CGFloat = 22
     /// From a row's top to the top of the note under it.
     private static let noteOffset: CGFloat = 19
-    /// Between the Appearance note and the Playback row.
+    /// Between one row's note and the next row.
     private static let groupGap: CGFloat = 14
 
     private init() {
@@ -58,7 +61,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let soundCheckY = noteY + note.frame.height + Self.groupGap
         let soundCheckNote = Self.note("Automatically adjusts song playback volume to the same level.", width: noteWidth)
         let soundCheckNoteY = soundCheckY + Self.noteOffset
-        let boxBottom = soundCheckNoteY + soundCheckNote.frame.height + 16
+        let showsVisualizer = VisualizerController.isSupported
+        let visualizerY = soundCheckNoteY + soundCheckNote.frame.height + Self.groupGap
+        let boxBottom = showsVisualizer ? visualizerY + hdrCheckbox.frame.height + 16
+                                        : soundCheckNoteY + soundCheckNote.frame.height + 16
         let buttonsY = boxBottom + 14
         let size = NSSize(width: Self.width, height: buttonsY + AquaButton.height + L.bottomMargin + 2)
         aquaWindow = AquaWindow(contentSize: size, title: "Settings")
@@ -87,6 +93,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         face.addSubview(soundCheckBox)
         soundCheckNote.setFrameOrigin(NSPoint(x: noteX, y: soundCheckNoteY))
         face.addSubview(soundCheckNote)
+
+        if showsVisualizer {
+            addLabel("Visualizer:", y: visualizerY, to: face)
+            hdrCheckbox.setFrameOrigin(NSPoint(x: Self.radioLeft, y: visualizerY))
+            hdrCheckbox.onToggle = { on in VisualizerPreference.chooseHDR(on, save: false) }
+            face.addSubview(hdrCheckbox)
+        }
 
         let okW = max(80, AquaButton.width(for: okButton.title))
         let cancelW = max(80, AquaButton.width(for: cancelButton.title))
@@ -132,6 +145,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             show(picked: AppearancePreference.saved)
             soundCheckAtOpen = SoundCheckPreference.current
             soundCheckBox.isOn = soundCheckAtOpen
+            hdrAtOpen = VisualizerPreference.currentHDR
+            hdrCheckbox.isOn = VisualizerPreference.savedHDR
         }
         showWindow(nil)
         aquaWindow.makeKeyAndOrderFront(nil)
@@ -152,12 +167,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func okPressed() {
         AppearancePreference.choose(picked, save: true)
         SoundCheckPreference.choose(soundCheckBox.isOn, save: true)
+        // Saved only when changed, so an OK that touched nothing writes nothing new to the defaults.
+        if VisualizerController.isSupported, hdrCheckbox.isOn != VisualizerPreference.savedHDR {
+            VisualizerPreference.chooseHDR(hdrCheckbox.isOn, save: true)
+        }
         aquaWindow.orderOut(nil)
     }
 
     private func cancelPressed() {
         AppearancePreference.choose(modeAtOpen, save: false)
         SoundCheckPreference.choose(soundCheckAtOpen, save: false)
+        if VisualizerController.isSupported { VisualizerPreference.chooseHDR(hdrAtOpen, save: false) }
         aquaWindow.orderOut(nil)
     }
 

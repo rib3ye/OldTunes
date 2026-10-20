@@ -46,6 +46,12 @@ files on this Mac.
   until you turn it on, as in Music.
 - **Its own volume.** The volume slider (and ⌘↑ / ⌘↓) sets OldTunes's volume for every song,
   cloud songs too, and leaves the Mac's volume alone. OldTunes remembers it when you quit.
+- **Visualizer.** The flower button at the bottom right, or ⌘T, swaps the song list for a
+  visualizer that moves with the music, cloud songs included, as iTunes 4.9 did. ⇧⌘F fills the
+  screen with it; Esc comes back. Inside it, H lists its keys (R for something new, P M W for a new
+  palette, motion or wave, and more). It is based on [Geiss HDR](https://www.geisswerks.com/geiss_hdr)
+  by Ryan Geiss. On a screen that can show HDR its brightest colours go past white; Settings ▸
+  Visualizer turns that off. Needs macOS 14.2 or later.
 
 ## Signing in
 
@@ -61,10 +67,11 @@ never tells Music to play.
 
 The first time OldTunes plays a cloud song, macOS asks whether OldTunes may record system audio.
 Allow it: cloud songs play in a separate Apple process, and OldTunes takes their sound from there
-so its volume slider and Sound Check can set their level. OldTunes records nothing to disk. If
-you said no, cloud songs play at their own level and the volume slider moves the Mac's volume
-during them; turn OldTunes on in System Settings ▸ Privacy & Security ▸ Screen & System Audio
-Recording, under System Audio Recording Only, then quit and reopen OldTunes.
+so its volume slider and Sound Check can set their level, and so the visualizer can hear them.
+OldTunes listens only to its own songs and records or saves nothing. If you said no, cloud songs
+play at their own level, the volume slider moves the Mac's volume during them, and the visualizer
+says it can't hear the music; turn OldTunes on in System Settings ▸ Privacy & Security ▸ Screen &
+System Audio Recording, under System Audio Recording Only, then quit and reopen OldTunes.
 
 ## Build and run
 
@@ -100,8 +107,11 @@ Builds are signed as "Apple Development: Noah Tsutsui", team 92N52YB23U. Never a
 | ⌘I | Get Info |
 | ⌘B | Show / hide the browser |
 | ⌘O | Add Folder to Library |
-| ⌘, | Settings (Light, Dark, Match System; Sound Check) |
+| ⌘, | Settings (appearance, Sound Check, visualizer HDR) |
 | ⌘1 | Bring back the main window after closing it (music keeps playing) |
+| ⌘T | Visualizer on / off |
+| ⇧⌘F | Visualizer full screen (Esc to come back) |
+| H | The visualizer's own keys, while it shows |
 
 ## Known limits
 
@@ -115,7 +125,7 @@ Builds are signed as "Apple Development: Noah Tsutsui", team 92N52YB23U. Never a
   a play/pause or next key can reach MusicKit's own player and pause the song.
 - **No AirPlay or crossfade** for cloud songs (MusicKit doesn't offer them on macOS).
 - **No downloading** cloud songs to this Mac; MusicKit on macOS can't add or download.
-- **Equalizer, visualizer and eject** buttons are drawn for looks and do nothing.
+- **Equalizer and eject** buttons are drawn for looks and do nothing.
 - **Playlists can't be edited song by song yet**, and smart playlists' rules can't be
   changed: the source list makes, renames, duplicates and deletes whole playlists only.
   Duplicate copies a playlist one song at a time through Music, so a long one takes a while.
@@ -135,7 +145,8 @@ Builds are signed as "Apple Development: Noah Tsutsui", team 92N52YB23U. Never a
   `OldTunes/App/AppController.swift` wires concrete types together.
 - Test benches: launch with `open -n --env OLDTUNES_HARNESS=<name> …/OldTunes.app` where
   `<name>` is `smoke` (end to end), `library`, `playback`, `metadata`, `chrome`, `lists`,
-  `appearance` (light and dark, with an invented library), or `authcheck`.
+  `appearance` (light and dark, with an invented library), `visualizer` (pick a part with
+  `OLDTUNES_VIS_MODE`; see `docs/VISUALIZER.md`), or `authcheck`.
   `OLDTUNES_SNAPSHOT=/path.png` renders the window to a PNG; `OLDTUNES_DB_PATH` points the
   index somewhere else. Test benches run in Light; `OLDTUNES_APPEARANCE=dark` runs one in the
   dark without changing the saved setting.
