@@ -86,6 +86,37 @@ Builds are signed as "Apple Development: Noah Tsutsui", team 92N52YB23U. Never a
 
 `project.yml` is the source of truth; the `.xcodeproj` is generated and not committed.
 
+## Releases
+
+Every push to `main` builds OldTunes and publishes it on the repo's Releases page as
+`OldTunes-<version>-<build>.zip`, with notes listing the pull requests merged since the last
+release. The build runs on Noah's Mac, not on GitHub's machines: the `Release` workflow
+(`.github/workflows/release.yml`) hands the job to a GitHub Actions runner installed on that
+Mac, which runs `tools/release.sh` in its own checkout. The app is signed with Developer ID,
+and notarized once a notarytool profile exists (the script's header says how to make one). The
+version is `MARKETING_VERSION` in `project.yml` and the build number is the commit count, so
+the About box says, say, "Version 0.1.0 (5)".
+
+The Mac has to be on and logged in. While it sleeps the release waits; GitHub drops it after
+24 hours, and then Actions ▸ Release ▸ Run workflow starts it again.
+
+To make a release by hand, on that Mac, from the repo root of a clean checkout of `main`:
+
+```bash
+tools/release.sh
+```
+
+`tools/release.sh --dry-run` does everything except publish.
+
+The runner lives in `~/actions-runner-OldTunes` and starts at login as a LaunchAgent. Its logs
+are in `~/actions-runner-OldTunes/_diag`. To set it up on another Mac, follow repo Settings ▸
+Actions ▸ Runners ▸ New self-hosted runner into that folder, then run `./svc.sh install` there.
+Before `./svc.sh start`, delete the `SessionCreate` key from the plist that `svc.sh install`
+wrote in `~/Library/LaunchAgents`: it starts jobs in a separate security session that can't use
+the login keychain, so signing fails with `errSecInternalComponent`. Before this repo goes
+public, remove the runner: on a public repo, a stranger's pull request can add a workflow that
+runs on it.
+
 ## Keyboard
 
 | Key | Does |

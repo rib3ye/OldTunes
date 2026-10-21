@@ -1,0 +1,34 @@
+# Every push to main (a merged pull request) builds OldTunes on Noah's Mac and publishes it as a
+# GitHub release. The job runs on a self-hosted runner installed on that Mac, so the build uses its
+# Xcode and its Developer ID certificate. tools/release.sh does the work; README ▸ Releases says
+# how the runner is set up.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # Re-run by hand from the Actions tab, e.g. after the Mac was asleep for more than a day.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One build at a time. If several merges land while the Mac is asleep, only the newest one waiting
+# is built.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
+    steps:
+      # Pinned to a commit: this code runs on Noah's Mac.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the build number is the commit count
+      - run: tools/release.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
