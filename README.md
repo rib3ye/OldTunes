@@ -16,6 +16,10 @@ files on this Mac.
   again to reverse. OldTunes keeps the last sort you clicked, even after you quit. Playlists
   still open in their own order, and the list goes back to your sort when you leave one.
 - **Shuffle** and **repeat** (off / all / one) from the buttons under the source list.
+- **Dock menu.** Right-click OldTunes's Dock icon to see the song playing and to play or pause,
+  skip to the next or previous song, and set Shuffle and Repeat, as in iTunes. Its Previous
+  Song always goes back a song; the back button and ⌘← restart the song first if it's more than
+  3 s in.
 - **Get Info** (⌘I) reads and edits tags. Songs in your Music library are saved through the
   Music app, which also updates the song's file if it has one, so Music and OldTunes always
   agree. Songs from added folders are rewritten in place safely (temp copy, then an atomic swap).

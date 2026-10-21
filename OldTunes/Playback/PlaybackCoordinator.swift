@@ -244,11 +244,15 @@ final class PlaybackCoordinator: PlaybackControlling {
             seek(to: 0)
             return
         }
+        previousSong()
+    }
+
+    func previousSong() {
         guard !live.isEmpty else { return }
         state.lastError = nil
         if let index = step(from: cursor, by: -1) {
             // If nothing before it can play (all unchecked, say), restart this song instead, as
-            // previous() on the first song does.
+            // going back from the first song does.
             begin(at: index, direction: -1, userInitiated: true, restartIfNone: currentID)
         } else {
             seek(to: 0)

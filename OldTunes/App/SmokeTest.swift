@@ -139,6 +139,46 @@ struct SmokeTest {
             check("Dock click reopens the window", await waitFor(2) { window.isVisible }, "")
         }
 
+        // Right-click on the Dock icon: the song playing, then the controls. Each pick is made as
+        // the Dock makes it (the item's action, sent to its target), from a menu built afresh.
+        if let playing = app.player.state.nowPlaying {
+            func dockMenu() -> NSMenu { NSApp.delegate?.applicationDockMenu?(NSApp) ?? NSMenu() }
+            func pick(_ title: String, in menu: NSMenu?) {
+                guard let menu else { return }
+                let index = menu.indexOfItem(withTitle: title)
+                if index >= 0 { menu.performActionForItem(at: index) }
+            }
+            let top = dockMenu().items.prefix(2).map(\.title)
+            check("Dock menu shows the playing song",
+                  top == ["Now Playing", DockMenu.shortened(playing.displayTitle)] && dockMenu().item(withTitle: "Pause") != nil,
+                  top.joined(separator: " | "))
+            pick("Pause", in: dockMenu())
+            let paused = await waitFor(3) { !app.player.state.isPlaying }
+            pick("Play", in: dockMenu())
+            let resumed = await waitFor(5) { app.player.state.isPlaying }
+            check("Dock menu pauses and plays", paused && resumed, "")
+            pick("Shuffle", in: dockMenu())
+            let shuffleOn = app.player.state.isShuffling && dockMenu().item(withTitle: "Shuffle")?.state == .on
+            pick("Shuffle", in: dockMenu())
+            check("Dock menu turns shuffle on and off", shuffleOn && !app.player.state.isShuffling, "")
+            pick("One", in: dockMenu().item(withTitle: "Repeat")?.submenu)
+            let one = app.player.state.repeatMode == .one
+                && dockMenu().item(withTitle: "Repeat")?.submenu?.item(withTitle: "One")?.state == .on
+            pick("Off", in: dockMenu().item(withTitle: "Repeat")?.submenu)
+            check("Dock menu picks a repeat mode", one && app.player.state.repeatMode == .off, "")
+            pick("Next Song", in: dockMenu())
+            let moved = await waitFor(12) { app.player.state.nowPlaying?.id != playing.id && app.player.state.position > 1 }
+            check("Dock menu's Next Song plays the following song", moved,
+                  "now “\(app.player.state.nowPlaying?.title ?? "nil")”")
+            // Past 3 s, where the back button only restarts the song.
+            _ = await waitFor(8) { app.player.state.position > 3.5 }
+            let past = app.player.state.position
+            pick("Previous Song", in: dockMenu())
+            let back = await waitFor(12) { app.player.state.nowPlaying?.id == playing.id && app.player.state.position > 0.5 }
+            check("Dock menu's Previous Song goes back a song even past 3 s", back,
+                  "picked at \(fmt(past)) s; now “\(app.player.state.nowPlaying?.title ?? "nil")”")
+        }
+
         app.playPause()
         let paused = await waitFor(3) { !app.player.state.isPlaying }
         check("play/pause pauses", paused, "isPlaying=\(app.player.state.isPlaying)")

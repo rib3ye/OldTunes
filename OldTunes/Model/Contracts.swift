@@ -256,6 +256,9 @@ protocol PlaybackControlling: AnyObject {
     func next()
     /// iTunes rule: more than 3 s into a song restarts it; otherwise goes to the previous one.
     func previous()
+    /// The previous song however far into this one, for the Dock menu: previous() needs a second
+    /// press within 3 s to get past the restart, and reopening that menu takes longer.
+    func previousSong()
     func seek(to seconds: TimeInterval)
     func stop()
     func setVolume(_ volume: Float)

@@ -58,4 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppAssembly.showMainWindow()
         return true
     }
+
+    /// Right-click on the Dock icon: the song playing and the playback controls (DockMenu).
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { AppAssembly.dockMenu() }
 }

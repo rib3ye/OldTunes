@@ -238,6 +238,8 @@ final class AppController: NSObject {
     @objc func playPauseAction(_ sender: Any?) { playPause() }
     @objc func nextAction(_ sender: Any?) { player.next() }
     @objc func previousAction(_ sender: Any?) { player.previous() }
+    /// The Dock menu's Previous Song: back a song even past 3 s, where previousAction restarts it.
+    @objc func previousSongAction(_ sender: Any?) { player.previousSong() }
     @objc func volumeUp(_ sender: Any?) { setVolume(min(1, player.state.volume + 0.1)) }
     @objc func volumeDown(_ sender: Any?) { setVolume(max(0, player.state.volume - 0.1)) }
 
@@ -260,6 +262,12 @@ final class AppController: NSObject {
         case .all: player.setRepeat(.one)
         case .one: player.setRepeat(.off)
         }
+    }
+
+    /// The Dock menu's Repeat ▸ Off / All / One. Each item carries its mode.
+    @objc func chooseRepeat(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? RepeatMode else { return }
+        player.setRepeat(mode)
     }
 
     @objc func toggleBrowser(_ sender: Any?) {
@@ -649,6 +657,9 @@ final class AppController: NSObject {
         view.addItem(item("Show Browser", #selector(toggleBrowser(_:)), "b"))
         MainMenu.insert(view, into: main)
     }
+
+    /// The Dock icon's right-click menu. AppDelegate asks for a new one each time it opens.
+    func dockMenu() -> NSMenu { DockMenu.make(for: player.state, target: self) }
 
     private func item(_ title: String, _ action: Selector, _ key: String,
                       _ modifiers: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {

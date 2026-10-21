@@ -30,6 +30,10 @@ enum AppAssembly {
     /// Dock click or Window ▸ OldTunes after the main window was closed.
     static func showMainWindow() { controller?.showMainWindow(nil) }
 
+    /// Right-click on the Dock icon. Nil while the app is starting and in test benches, so the
+    /// Dock shows only its own items.
+    static func dockMenu() -> NSMenu? { controller?.dockMenu() }
+
     // MARK: - Index recovery
 
     /// The index is a cache of the Music library that rebuilds in about 6 s, so a file that will not

@@ -342,7 +342,8 @@ private final class Bench {
         check("local song plays after the boundary", player.state.position - p0 > 1.0 && player.local.isPlaying, stateLine())
     }
 
-    /// previous(): past 3 s restarts the song; within 3 s goes back one.
+    /// previous(): past 3 s restarts the song; within 3 s goes back one. previousSong(), the Dock
+    /// menu's, goes back one past 3 s too.
     func previousRule() async {
         Log.info("=== previous() at 5 s vs at 1 s ===")
         player.seek(to: 5)
@@ -356,6 +357,16 @@ private final class Bench {
         player.previous()
         let back = await waitUntil(20) { self.playing(self.c1) }
         check("previous() at 1 s goes to the previous song", back, stateLine())
+
+        // Back on l2, past 3 s, where previous() only restarts it.
+        player.next()
+        _ = await waitUntil(5) { self.playing(self.l2) }
+        player.seek(to: 5)
+        try? await Task.sleep(for: .seconds(0.3))
+        Log.info("previousSong() pressed at \(f(player.state.position)) s")
+        player.previousSong()
+        let backPast3 = await waitUntil(20) { self.playing(self.c1) }
+        check("previousSong() at 5 s goes to the previous song", backPast3, stateLine())
     }
 
     /// replaceQueue keeps the current song; shuffle pins it first and permutes the rest.
