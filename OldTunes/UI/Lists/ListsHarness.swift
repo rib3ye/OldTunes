@@ -177,6 +177,7 @@ private final class ListsBench {
         await snapshotArtistSort(library: library)
         await selectionPersistenceAndDateSort(library: library)
         await searchChecks(library: library, total: snap.tracks.count)
+        await shortListChecks(library: library)
         await browserChecks(library: library, total: snap.tracks.count)
         await sourceChecks(snap: snap)
         await cloudAndDimmed(library: library, snap: snap)
@@ -356,6 +357,42 @@ private final class ListsBench {
               + (wrong.isEmpty ? "" : "; wrong: \(wrong.prefix(5))"))
     }
 
+    /// A scroller shows only when its axis has something to scroll (Noah's call, October 20,
+    /// 2026), and the header's corner square comes and goes with the vertical one.
+    private func scrollersMatchContent(_ label: String) {
+        guard let tracks else { return }
+        let sv = tracks.listScrollView, table = tracks.tableView
+        guard let v = sv.verticalScroller, let h = sv.horizontalScroller else { return }
+        let rowsHeight = CGFloat(table.numberOfRows) * (table.rowHeight + table.intercellSpacing.height)
+        let columnsWidth = table.tableColumns.lastIndex { !$0.isHidden }.map { table.rect(ofColumn: $0).maxX } ?? 0
+        let roomHeight = sv.bounds.height - TrackHeaderView.height - (h.isHidden ? 0 : h.frame.height)
+        let roomWidth = sv.bounds.width - (v.isHidden ? 0 : v.frame.width)
+        let cornerShown = table.cornerView?.isHidden == false
+        check("scrollers show only with something to scroll (\(label))",
+              v.isHidden == (rowsHeight <= roomHeight) && h.isHidden == (columnsWidth <= roomWidth) && cornerShown == !v.isHidden,
+              "rows \(Int(rowsHeight)) pt in \(Int(roomHeight)): vertical \(v.isHidden ? "hidden" : "shown"); "
+              + "columns \(Int(columnsWidth)) pt in \(Int(roomWidth)): horizontal \(h.isHidden ? "hidden" : "shown"); "
+              + "header corner \(cornerShown ? "shown" : "hidden")")
+    }
+
+    /// The same rule in each browser pane.
+    private func paneScrollersMatchContent(_ label: String) {
+        guard let tracks else { return }
+        let panes = tracks.columnBrowser.panes
+        var states: [String] = [], wrong: [String] = []
+        for pane in panes {
+            guard let v = pane.scrollView.verticalScroller else { continue }
+            let table = pane.table
+            let rowsHeight = CGFloat(table.numberOfRows) * (table.rowHeight + table.intercellSpacing.height)
+            let state = "\(BrowserPane.title(for: pane.field)) \(table.numberOfRows) rows \(v.isHidden ? "hidden" : "shown")"
+            states.append(state)
+            if v.isHidden != (rowsHeight <= pane.scrollView.bounds.height) { wrong.append(state) }
+        }
+        check("browser scrollers show only with something to scroll (\(label))", states.count == 3 && wrong.isEmpty,
+              "\(states.joined(separator: ", ")) in \(Int(panes.first?.scrollView.bounds.height ?? 0)) pt"
+              + (wrong.isEmpty ? "" : "; wrong: \(wrong)"))
+    }
+
     // MARK: Scenarios
 
     private func initialChecks(library: ListsHarnessLibrary, total: Int) async {
@@ -373,14 +410,15 @@ private final class ListsBench {
         check("header is the custom 15 pt + 1 pt rule view", header is TrackHeaderView && header?.frame.height == 16,
               "height \(header?.frame.height ?? 0)")
         let scroller = tracks.listScrollView.verticalScroller
-        check("vertical scroller is a 15 pt AquaScroller, legacy, always shown",
+        check("vertical scroller is a 15 pt legacy AquaScroller, shown for the whole library",
               scroller is AquaScroller && scroller?.frame.width == 15 && tracks.listScrollView.scrollerStyle == .legacy
-              && tracks.listScrollView.hasVerticalScroller && !tracks.listScrollView.autohidesScrollers
+              && tracks.listScrollView.hasVerticalScroller && tracks.listScrollView.autohidesScrollers
               && scroller?.isHidden == false,
               "frame \(scroller?.frame ?? .zero) style=\(tracks.listScrollView.scrollerStyle.rawValue)")
         let hscroller = tracks.listScrollView.horizontalScroller
         check("horizontal scroller is a 15 pt AquaScroller", hscroller is AquaScroller && hscroller?.frame.height == 15,
               "frame \(hscroller?.frame ?? .zero)")
+        scrollersMatchContent("whole library")
         if #available(macOS 27.0, *) {
             let radii = tracks.listScrollView.effectiveCornerRadii
             check("scroll view corners are square (cornerConfiguration nil)",
@@ -621,6 +659,54 @@ private final class ListsBench {
               && tracks.tableView.rect(ofRow: 0).minY >= top.minY, "first on-screen row \(tracks.visibleRows.lowerBound), top \(top.minY)")
     }
 
+    /// A list that fits has no scroller: its rows, stripes and header run to the pane's right
+    /// edge. Clearing the search brings the scroller back.
+    private func shortListChecks(library: ListsHarnessLibrary) async {
+        guard let tracks else { return }
+        let sv = tracks.listScrollView, table = tracks.tableView
+        let pitch = table.rowHeight + table.intercellSpacing.height
+        let few = max(Int(sv.unobscuredDocumentRect.height / pitch) / 2, 1)
+        // A title that matches only a few songs, so the list fits with room to spare.
+        let candidates = (try? await library.tracks(ids: Array(tracks.order.prefix(300)))) ?? []
+        var search: String?, matches = 0
+        for title in candidates.map(\.title) where title.count >= 6 {
+            var query = tracks.query
+            query.search = title
+            let count = (try? await library.ids(for: query))?.count ?? 0
+            if (1...few).contains(count) {
+                search = title
+                matches = count
+                break
+            }
+        }
+        guard let search else {
+            check("a search that matches a few songs", false, "none of the first 300 titles matched 1–\(few) songs")
+            return
+        }
+        tracks.query.search = search
+        await settle()
+        check("a search that matches a few songs lists just those", tracks.order.count == matches, "\(matches) rows")
+        scrollersMatchContent("\(matches)-row search")
+        if let rep = snapshot("03c_short_list_no_scroller.png") {
+            // Where the trough was: the stripes under the last row run on to the edge.
+            let row = table.numberOfRows + 1
+            let visible = sv.unobscuredDocumentRect
+            let color = pixel(rep, in: table, at: NSPoint(x: visible.maxX - 7.5, y: (CGFloat(row) + 0.5) * pitch))
+            let expected = row % 2 == 0 ? Theme.listBG : Theme.rowStripe
+            let headerWidth = table.headerView?.superview?.frame.width ?? 0
+            check("a short list's rows and header run to the right edge", Self.close(color, expected)
+                  && visible.width == sv.bounds.width && headerWidth == sv.bounds.width,
+                  "rows \(visible.width) pt and header \(headerWidth) pt of \(sv.bounds.width); "
+                  + "stripe row \(row) at the edge \(Self.hex(color)), expected \(Self.hex(ListsHarness.srgb(expected)))")
+        }
+        tracks.query.search = ""
+        await settle()
+        let knob = (sv.verticalScroller as? AquaScroller)?.knobRect ?? .zero
+        check("clearing the search brings the scroller and its knob back", sv.verticalScroller?.isHidden == false && knob != .zero,
+              "\(tracks.order.count) rows, knob \(knob)")
+        scrollersMatchContent("search cleared")
+    }
+
     private func browserChecks(library: ListsHarnessLibrary, total: Int) async {
         guard let tracks else { return }
         tracks.isBrowserVisible = true
@@ -641,6 +727,8 @@ private final class ListsBench {
               genrePane.allRowTitle)
         let fraction = browser.frame.height / max(tracks.view.bounds.height, 1)
         check("browser defaults to ~40% of the pane", abs(fraction - 0.4) < 0.03, "fraction \(Self.f(Double(fraction)))")
+        await settle()
+        paneScrollersMatchContent("whole library")
 
         // Pick the genre with the most songs, as a user clicking it would.
         let counts = await genreCounts(library: library)
@@ -658,6 +746,7 @@ private final class ListsBench {
               && rows.allSatisfy { $0.genre == genre }, "\"\(genre)\": \(rows.count) rows")
         check("picking a genre narrows the Artist pane", artistPane.values.count < allArtists && artistPane.selectedValue == nil,
               "\(allArtists) → \(artistPane.values.count) artists; \"\(artistPane.allRowTitle)\"")
+        paneScrollersMatchContent("one genre")
         snapshot("04_browser_genre_selected.png")
 
         // Then an artist narrows albums and the list further.
@@ -672,6 +761,10 @@ private final class ListsBench {
             check("picking an artist narrows albums and rows", narrowed.allSatisfy { $0.artist == artist && $0.genre == genre }
                   && albumPane.values.count <= albumsBefore && !narrowed.isEmpty,
                   "\"\(artist)\": \(narrowed.count) rows, \(albumPane.values.count) albums")
+            await settle()
+            paneScrollersMatchContent("one artist")
+            scrollersMatchContent("one artist")
+            snapshot("04b_browser_artist_selected.png")
             artistPane.table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
             await tracks.waitForLoad()
         }
@@ -1065,6 +1158,7 @@ private final class ListsBench {
             NSApp.sendAction(action, to: yearItem.target, from: yearItem)
             check("Year can be shown", table.tableColumns.first { $0.identifier.rawValue == "year" }?.isHidden == false)
             await settle()
+            scrollersMatchContent("Year column shown")
             snapshot("10_year_column_shown.png")
             NSApp.sendAction(action, to: yearItem.target, from: yearItem)
         }
