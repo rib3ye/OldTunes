@@ -22,7 +22,8 @@ enum AppearanceHarness {
     /// What the bench changes in the app's real defaults, put back when it ends: it runs with the
     /// app's own bundle id, so these are the user's saved settings. Opening Settings saves its
     /// window's frame on this screen, over the one the user left.
-    private static let restoredKeys = [AppearancePreference.defaultsKey, TrackColumnLayout.defaultsKey,
+    private static let restoredKeys = [AppearancePreference.defaultsKey, SoundCheckPreference.defaultsKey,
+                                       TrackColumnLayout.defaultsKey,
                                        "OldTunes.TrackList.browserVisible", "OldTunes.TrackList.browserFraction",
                                        "OldTunes.SourceList.expandedFolders", MetalContentView.sourceWidthDefaultsKey,
                                        SettingsWindowController.frameDefaultsKey, VisualizerPreference.hdrKey]
@@ -376,6 +377,63 @@ enum AppearanceHarness {
         check("the saved choice is what a launch would read",
               defaults.string(forKey: AppearancePreference.defaultsKey) == "dark",
               "defaults \(defaults.string(forKey: AppearancePreference.defaultsKey) ?? "nil")")
+
+        await soundCheckChecks(prefs, window, out: out)
+    }
+
+    /// Sound Check works like the Appearance choice: a click takes effect at once and saves
+    /// nothing, Cancel undoes it, OK saves it.
+    private static var soundCheckPosts = 0
+
+    private static func soundCheckChecks(_ prefs: SettingsWindowController, _ window: AquaWindow, out: URL) async {
+        let key = SoundCheckPreference.defaultsKey
+        let defaults = UserDefaults.standard
+        let observer = NotificationCenter.default.addObserver(forName: .soundCheckDidChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { soundCheckPosts += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        var posts: Int { soundCheckPosts }
+        func describe() -> String {
+            "box \(prefs.soundCheckBox.isOn), current \(SoundCheckPreference.current), saved \(SoundCheckPreference.saved), "
+                + "\(posts) change posts"
+        }
+
+        SoundCheckPreference.choose(false, save: true)
+        soundCheckPosts = 0
+        SettingsWindowController.show()
+        let box = prefs.soundCheckBox
+        let inside = box.superview.map { face in
+            face.subviews.contains { $0 is AquaBoxView && $0.frame.contains(box.frame) }
+        } ?? false
+        check("Sound Check is a checkbox under Playback, inside the box, above the buttons",
+              box.title == "Sound Check" && inside && box.frame.maxY < prefs.cancelButton.frame.minY,
+              "\"\(box.title)\" at \(box.frame), buttons from y \(prefs.cancelButton.frame.minY)")
+        check("Sound Check starts off, as in Music", !box.isOn && !SoundCheckPreference.current, describe())
+        _ = snapshot(window, "settings_sound_check.png", out: out)
+
+        box.toggle()
+        check("clicking Sound Check turns it on at once and saves nothing",
+              SoundCheckPreference.current && !SoundCheckPreference.saved && posts == 1, describe())
+        prefs.cancelButton.performClick(nil)
+        await Probe.pause(0.3)
+        check("Cancel turns Sound Check back off", !SoundCheckPreference.current && !SoundCheckPreference.saved
+              && posts == 2 && !window.isVisible, describe())
+
+        SettingsWindowController.show()
+        check("reopened after Cancel, the box is off", !box.isOn, describe())
+        box.toggle()
+        prefs.okButton.performClick(nil)
+        await Probe.pause(0.3)
+        check("OK saves Sound Check on", SoundCheckPreference.current && SoundCheckPreference.saved
+              && defaults.bool(forKey: key) && posts == 3, describe())
+
+        SettingsWindowController.show()
+        check("reopened after OK, the box is on", box.isOn, describe())
+        box.toggle()
+        window.performClose(nil)
+        await Probe.pause(0.3)
+        check("the close button keeps the saved Sound Check", SoundCheckPreference.current && SoundCheckPreference.saved
+              && posts == 5, describe())
     }
 
     // MARK: - The window under test

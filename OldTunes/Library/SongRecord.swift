@@ -46,6 +46,9 @@ struct SongRecord: Sendable {
     var fileSize: Int64 = 0
     /// Folder rows only: modification time in Unix seconds, so a rescan can skip unchanged files.
     var fileMtime: Int64 = 0
+    /// Music's Sound Check value (`volumeNormalizationEnergy`); 0 when Music has none, and for
+    /// folder files, which Music never measured.
+    var soundCheckEnergy = 0
 
     /// What each fold key is made from: the source's own sort field when it has one ("Beatles"
     /// for "The Beatles"), else the value itself (RESEARCH.md §4.3). Folding is deferred to
@@ -63,7 +66,7 @@ struct SongRecord: Sendable {
         "total_time_ms", "track_number", "track_count", "disc_number", "disc_count", "year", "bpm",
         "added_at", "play_count", "rating", "is_compilation", "is_checked",
         "bucket", "is_cloud", "location_type", "location_path", "has_artwork", "album_pid", "kind",
-        "bit_rate", "sample_rate", "file_size", "file_mtime",
+        "bit_rate", "sample_rate", "file_size", "file_mtime", "sound_check_energy",
         "sk_title", "sk_artist", "sk_album", "sk_album_artist", "sk_genre", "content_hash",
     ]
 
@@ -74,7 +77,7 @@ struct SongRecord: Sendable {
             totalTimeMs, trackNumber, trackCount, discNumber, discCount, year, bpm,
             addedAt, playCount, rating, isCompilation, isChecked,
             bucket.rawValue, isCloud, locationType, locationPath, hasArtwork, albumPID, kind,
-            bitRate, sampleRate, fileSize, fileMtime,
+            bitRate, sampleRate, fileSize, fileMtime, soundCheckEnergy,
             SortKey.make(titleSortSource), SortKey.make(artistSortSource), SortKey.make(albumSortSource),
             SortKey.make(albumArtistSortSource), SortKey.make(genre), contentHash,
         ]
@@ -94,7 +97,7 @@ struct SongRecord: Sendable {
             h.combine(text)
         }
         for number in [trackNumber, trackCount, discNumber, discCount, year, bpm, playCount, rating,
-                       bucket.rawValue, locationType, bitRate, sampleRate] {
+                       bucket.rawValue, locationType, bitRate, sampleRate, soundCheckEnergy] {
             h.combine(number)
         }
         h.combine(totalTimeMs); h.combine(addedAt); h.combine(albumPID); h.combine(fileSize); h.combine(fileMtime)

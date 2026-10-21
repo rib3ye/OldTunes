@@ -43,9 +43,37 @@ final class LocalTransport: Transport {
 
     var isPlaying: Bool { player.currentItem != nil && player.rate != 0 }
 
+    /// The slider's setting. The player gets this times the Sound Check gain.
     var volume: Float {
-        get { player.volume }
-        set { player.volume = min(max(newValue, 0), 1) }
+        get { sliderVolume }
+        set {
+            sliderVolume = min(max(newValue, 0), 1)
+            applyVolume()
+        }
+    }
+
+    /// Settings ▸ Sound Check.
+    var isSoundCheckOn = false {
+        didSet { applyVolume() }
+    }
+
+    /// The Sound Check gain of the song being loaded or played, as a factor (SoundCheck). The player
+    /// has one volume for every item, so the coordinator sets this just before each load, while
+    /// nothing is sounding; a preloaded file then starts at its own level.
+    var soundCheckGain: Float = 1 {
+        didSet { applyVolume() }
+    }
+
+    private var sliderVolume: Float = 1
+
+    /// What AVPlayer was given: the slider times the gain. For the harness's logs.
+    var playerVolume: Float { player.volume }
+
+    /// AVPlayer's volume stops at 1, the file's own level. So a song Sound Check makes louder
+    /// (energy under 1000) is matched only as far as the slider leaves room: exactly while
+    /// slider × gain ≤ 1, and held at the file's own level above that.
+    private func applyVolume() {
+        player.volume = min(sliderVolume * (isSoundCheckOn ? soundCheckGain : 1), 1)
     }
 
     func load(_ what: Playable) async throws {

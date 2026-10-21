@@ -495,24 +495,3 @@ final class TapRecording: Sendable {
         }
     }
 }
-
-/// The "System Audio Recording Only" permission as TCC's private preflight call reports it, read the
-/// way AudioCap reads it: 0 granted, 1 denied, anything else not asked yet. Harness-only: there is no
-/// public API for it. nil when the call can't be found.
-enum AudioCapturePermission {
-    static func preflight() -> Int32? {
-        guard let tcc = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW),
-              let symbol = dlsym(tcc, "TCCAccessPreflight") else { return nil }
-        typealias Preflight = @convention(c) (CFString, CFDictionary?) -> Int32
-        return unsafeBitCast(symbol, to: Preflight.self)("kTCCServiceAudioCapture" as CFString, nil)
-    }
-
-    static func describe(_ raw: Int32?) -> String {
-        switch raw {
-        case nil: "unreadable"
-        case 0?: "granted (0)"
-        case 1?: "denied (1)"
-        case let other?: "not asked yet (\(other))"
-        }
-    }
-}

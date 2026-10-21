@@ -80,6 +80,9 @@ struct Track: Sendable, Hashable, Identifiable {
     /// but still played one you double-clicked. Starts from the Music library's own state
     /// (`!ITLibMediaItem.isUserDisabled`); OldTunes keeps its own changes in the index.
     var isChecked = true
+    /// Music's Sound Check value for the song (`ITLibMediaItem.volumeNormalizationEnergy`); 0 when
+    /// Music has none. Playback turns it into a gain with `SoundCheck.gain(energy:)`.
+    var soundCheckEnergy = 0
 
     var isLocal: Bool { fileURL != nil }
     /// In your library, not on this disk. Shown with a cloud badge.

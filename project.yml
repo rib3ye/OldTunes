@@ -60,7 +60,7 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSAppleMusicUsageDescription: OldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.
         NSAppleEventsUsageDescription: OldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, and to make, rename and delete the playlists you change in OldTunes.
-        NSAudioCaptureUsageDescription: OldTunes reads the sound of the songs it plays, so a visualizer can move with the music.
+        NSAudioCaptureUsageDescription: OldTunes takes the sound of the iCloud songs it plays from Apple's player, so its volume and Sound Check can set their level, and so a visualizer can move with the music.
     entitlements:
       path: OldTunes/App/OldTunes.entitlements
       properties:

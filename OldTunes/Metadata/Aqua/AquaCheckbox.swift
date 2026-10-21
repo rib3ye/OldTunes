@@ -12,11 +12,15 @@ final class AquaCheckbox: NSControl {
     var onToggle: ((Bool) -> Void)?
 
     private let size: Size
+    private let labelFont: NSFont
     private var isPressed = false { didSet { needsDisplay = true } }
 
-    init(title: String = "", size: Size = .regular, onToggle: ((Bool) -> Void)? = nil) {
+    /// The label is Lucida Grande 11, as in Get Info; Settings passes the 13 pt control font.
+    init(title: String = "", size: Size = .regular, font: NSFont = AquaStyle.smallFont,
+         onToggle: ((Bool) -> Void)? = nil) {
         self.title = title
         self.size = size
+        self.labelFont = font
         self.onToggle = onToggle
         super.init(frame: .zero)
         setAccessibilityRole(.checkBox)
@@ -33,12 +37,13 @@ final class AquaCheckbox: NSControl {
     override var acceptsFirstResponder: Bool { false }
 
     private var boxSide: CGFloat { size == .regular ? 14 : 12 }
-    private var labelFont: NSFont { AquaStyle.smallFont }
+    /// 14 for the 11 pt label, so the Get Info boxes stay where they were.
+    private var labelHeight: CGFloat { max(14, ceil(labelFont.ascender - labelFont.descender)) }
 
     override var fittingSize: NSSize {
         guard !title.isEmpty else { return NSSize(width: boxSide + 2, height: boxSide + 2) }
         let w = (title as NSString).size(withAttributes: [.font: labelFont]).width
-        return NSSize(width: boxSide + 6 + ceil(w) + 2, height: max(boxSide + 2, 15))
+        return NSSize(width: boxSide + 6 + ceil(w) + 2, height: max(boxSide + 2, labelHeight + 1))
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -55,8 +60,8 @@ final class AquaCheckbox: NSControl {
         guard !title.isEmpty else { return }
         let color = isEnabled ? AquaStyle.text : AquaStyle.textDisabled
         let attrs = AquaStyle.attributes(labelFont, color: color)
-        let textY = ((bounds.height - 14) / 2).rounded(.down)
-        (title as NSString).draw(in: NSRect(x: boxSide + 6, y: textY, width: bounds.width - boxSide - 6, height: 14),
+        let textY = ((bounds.height - labelHeight) / 2).rounded(.down)
+        (title as NSString).draw(in: NSRect(x: boxSide + 6, y: textY, width: bounds.width - boxSide - 6, height: labelHeight),
                                  withAttributes: attrs)
     }
 

@@ -12,7 +12,8 @@ import MusicKit
 /// ReviewFixBench, which the default mode also runs after the main bench; =tap runs AudioTapBench,
 /// which reads a cloud and a local song through a Core Audio process tap (asks for System Audio
 /// Recording the first time); =ab runs AudioABBench, which records one song from OldTunes and from
-/// Music for a side-by-side comparison.
+/// Music for a side-by-side comparison; =route runs CloudRouteBench, which checks what Sound Check's
+/// route does with iCloud songs.
 /// Cloud plays are kept out of the Music library's play history (affectsListeningHistory).
 /// The volume checks move the Mac's output volume, so they run only with OLDTUNES_PLAYBACK_VOLUME=1.
 @MainActor
@@ -20,12 +21,12 @@ enum PlaybackHarness {
     static func run() async {
         let mode = ProcessInfo.processInfo.environment["OLDTUNES_PLAYBACK_MODE"] ?? "all"
         Log.info("playback harness: mode=\(mode) auth=\(MusicAuthorization.currentStatus) pid=\(ProcessInfo.processInfo.processIdentifier)")
-        if mode == "ab" {
-            // Needs only the one song Music has loaded, not the harness library.
+        if mode == "ab" || mode == "route" {
+            // Each plays songs from an index of its own, not the harness library.
             if #available(macOS 14.2, *) {
-                await AudioABBench.run()
+                if mode == "ab" { await AudioABBench.run() } else { await CloudRouteBench.run() }
             } else {
-                Log.error("AB: process taps need macOS 14.2")
+                Log.error("\(mode): process taps need macOS 14.2")
             }
             Log.flush()
             NSApp.terminate(nil)
@@ -314,9 +315,15 @@ private final class Bench {
         Log.info("audio output processes during cloud playback: \(AudioProcessProbe.processesRunningOutput())")
         nowPlayingCheck(c1)
         let device = OutputDeviceVolume.read()
-        check("state.volume reads the device volume when a cloud song starts",
-              device.map { abs($0 - player.state.volume) < 0.02 } ?? false,
-              "state \(f(Double(player.state.volume))) device \(device.map { f(Double($0)) } ?? "nil")")
+        if player.cloud.ownsVolume {
+            check("state.volume shows OldTunes's own volume when a cloud song starts (CloudAudioRoute sets its level)",
+                  abs(player.state.volume - player.appVolume) < 0.001,
+                  "state \(f(Double(player.state.volume))) OldTunes \(f(Double(player.appVolume))) device \(device.map { f(Double($0)) } ?? "nil")")
+        } else {
+            check("state.volume reads the device volume when a cloud song starts (no route: System Audio Recording is off)",
+                  device.map { abs($0 - player.state.volume) < 0.02 } ?? false,
+                  "state \(f(Double(player.state.volume))) device \(device.map { f(Double($0)) } ?? "nil")")
+        }
 
         player.seek(to: 60)
         try? await Task.sleep(for: .seconds(1.5))
@@ -587,7 +594,8 @@ private final class Bench {
         player.setRepeat(.off)
     }
 
-    /// Local volume is the player's own; cloud volume is the output device's.
+    /// Files and cloud songs share OldTunes's own volume. Only a cloud song OldTunes can't set the
+    /// level of (no System Audio Recording permission) moves the output device's volume.
     func volume() async {
         Log.info("=== volume ===")
         player.play(queue: [l1.id], startAt: l1.id)
@@ -605,12 +613,22 @@ private final class Bench {
             check("cloud volume: song starts and device volume is readable", false, stateLine())
             return
         }
+        if player.cloud.ownsVolume {
+            player.setVolume(0.4)
+            let gain = player.cloud.route?.gain ?? -1
+            let device = OutputDeviceVolume.read()
+            check("cloud setVolume sets OldTunes's own volume, the route's gain, and leaves the device alone",
+                  abs(player.cloud.volume - 0.4) < 0.001 && abs(gain - 0.4) < 0.001 && device == original,
+                  "cloud \(f(Double(player.cloud.volume))) route gain \(f(Double(gain))) device \(f(Double(original))) → \(device.map { f(Double($0)) } ?? "nil")")
+            player.setVolume(0.75)
+            return
+        }
         let target = max(0, original - 0.05)
         player.setVolume(target)
         let readBack = OutputDeviceVolume.read() ?? -1
         player.setVolume(original)
         let restored = OutputDeviceVolume.read() ?? -1
-        check("cloud setVolume drives the output device volume", abs(readBack - target) < 0.02 && abs(restored - original) < 0.02,
+        check("without a route, cloud setVolume drives the output device volume", abs(readBack - target) < 0.02 && abs(restored - original) < 0.02,
               "device \(f(Double(original))) → set \(f(Double(target))) read \(f(Double(readBack))) → restored \(f(Double(restored)))")
     }
 

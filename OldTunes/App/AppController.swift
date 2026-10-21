@@ -119,7 +119,7 @@ final class AppController: NSObject {
         bar.onPlayPause = { [weak self] in self?.playPause() }
         bar.onPrevious = { [weak self] in self?.player.previous() }
         bar.onNext = { [weak self] in self?.player.next() }
-        bar.onVolumeChange = { [weak self] in self?.player.setVolume($0) }
+        bar.onVolumeChange = { [weak self] in self?.setVolume($0) }
         bar.onSeek = { [weak self] in self?.player.seek(to: $0) }
         bar.onSearchTextChange = { [weak self] text in self?.tracks.query.search = text }
         bar.onBrowseToggle = { [weak self] in self?.toggleBrowser(nil) }
@@ -177,6 +177,14 @@ final class AppController: NSObject {
             }
             lastShownError = state.lastError
         }
+        if UserDefaults.standard.object(forKey: Self.volumeKey) != nil {
+            player.setVolume(UserDefaults.standard.float(forKey: Self.volumeKey))
+        }
+        // Settings ▸ Sound Check, including its preview before OK.
+        player.setSoundCheck(SoundCheckPreference.current)
+        NotificationCenter.default.addObserver(forName: .soundCheckDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.player.setSoundCheck(SoundCheckPreference.current) }
+        }
     }
 
     // MARK: - Actions
@@ -230,8 +238,20 @@ final class AppController: NSObject {
     @objc func playPauseAction(_ sender: Any?) { playPause() }
     @objc func nextAction(_ sender: Any?) { player.next() }
     @objc func previousAction(_ sender: Any?) { player.previous() }
-    @objc func volumeUp(_ sender: Any?) { player.setVolume(min(1, player.state.volume + 0.1)) }
-    @objc func volumeDown(_ sender: Any?) { player.setVolume(max(0, player.state.volume - 0.1)) }
+    @objc func volumeUp(_ sender: Any?) { setVolume(min(1, player.state.volume + 0.1)) }
+    @objc func volumeDown(_ sender: Any?) { setVolume(max(0, player.state.volume - 0.1)) }
+
+    /// OldTunes's own volume, as the user last left it.
+    static let volumeKey = "OldTunes.volume"
+
+    /// The slider and ⌘↑/⌘↓. OldTunes's own volume is kept between launches, as iTunes kept its
+    /// own; the Mac's volume, which the slider moves only when OldTunes can't set an iCloud song's
+    /// level itself, is the system's to keep.
+    private func setVolume(_ volume: Float) {
+        player.setVolume(volume)
+        UserDefaults.standard.set(player.appVolume, forKey: Self.volumeKey)
+    }
+
     @objc func toggleShuffle(_ sender: Any?) { player.setShuffle(!player.state.isShuffling) }
 
     @objc func cycleRepeat(_ sender: Any?) {

@@ -150,9 +150,11 @@ final class VisualizerController: NSObject {
 
     private func startAudio() {
         guard #available(macOS 14.2, *) else { return }
-        let audio = (self.audio as? VisualizerAudio) ?? VisualizerAudio(ring: ring, player: player, muted: tapMuted) { [weak self] hint in
-            self?.view?.showHint(hint)
-        }
+        let audio = (self.audio as? VisualizerAudio)
+            ?? VisualizerAudio(ring: ring, player: player, muted: tapMuted,
+                               cloudRouted: { [weak player] in player?.cloud.route?.mode == .routing }) { [weak self] hint in
+                self?.view?.showHint(hint)
+            }
         self.audio = audio
         audio.start()
     }
@@ -163,10 +165,12 @@ final class VisualizerController: NSObject {
         view?.showHint(nil)
     }
 
-    /// What the AudioFeed multiplies by: OldTunes' own volume for local files is applied before the tap
-    /// hears them, so it is undone; cloud volume is the output device's, applied after.
+    /// What the AudioFeed multiplies by: OldTunes's own volume is applied before the tap hears the song,
+    /// for files and for cloud songs CloudAudioRoute plays out, so it is undone. A cloud song
+    /// RemotePlayerService plays directly (no route) is heard before the Mac's volume, which applies after.
     var feedGain: Float {
-        player.local.isPlaying ? 1 / max(player.local.volume, 0.05) : 1
+        let routed = player.cloud.route?.mode == .routing
+        return player.local.isPlaying || (player.cloud.isPlaying && routed) ? 1 / max(player.appVolume, 0.05) : 1
     }
 
     // MARK: - Picture
@@ -223,14 +227,37 @@ final class VisualizerAudio {
     /// Building the tap waits (off the main thread, and for the permission prompt the first time), so
     /// it runs in a task. `stop()` cancels it: turned off before the task got going, nothing starts.
     private var starting: Task<Void, Never>?
+    private let player: PlaybackControlling
+    /// Whether CloudAudioRoute is playing cloud songs out from OldTunes (see
+    /// MusicAudioTap.leavesOutRemotePlayer), asked again at every change of the player's state.
+    private let cloudRouted: @MainActor () -> Bool
+    private var playerObserver: UUID?
 
-    init(ring: SampleRing, player: PlaybackControlling, muted: Bool, onHint: @escaping (SilenceWatchdog.Hint?) -> Void) {
+    init(ring: SampleRing, player: PlaybackControlling, muted: Bool, cloudRouted: @escaping @MainActor () -> Bool = { false },
+         onHint: @escaping (SilenceWatchdog.Hint?) -> Void) {
         tap = MusicAudioTap(ring: ring, muted: muted)
         watchdog = TapWatchdog(tap: tap, player: player)
         watchdog.onHint = onHint
+        self.player = player
+        self.cloudRouted = cloudRouted
+    }
+
+    /// Taps OldTunes alone while the route plays cloud songs out from it, and OldTunes plus its
+    /// RemotePlayerService otherwise; rebuilds the tap when that changes.
+    func followCloudRoute() {
+        let routed = cloudRouted()
+        guard tap.leavesOutRemotePlayer != routed else { return }
+        tap.leavesOutRemotePlayer = routed
+        Task { [tap] in
+            await tap.rebuild(reason: routed ? "the cloud route plays cloud songs from OldTunes" : "the cloud route stopped routing")
+        }
     }
 
     func start() {
+        followCloudRoute()
+        if playerObserver == nil {
+            playerObserver = player.addObserver { [weak self] _ in self?.followCloudRoute() }
+        }
         starting?.cancel()
         starting = Task { [tap, watchdog] in
             guard !Task.isCancelled else { return }
@@ -243,6 +270,8 @@ final class VisualizerAudio {
     func stop() {
         starting?.cancel()
         starting = nil
+        if let playerObserver { player.removeObserver(playerObserver) }
+        playerObserver = nil
         watchdog.stop()
         tap.stop()
     }

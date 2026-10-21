@@ -32,6 +32,13 @@ import GRDB
 ///   row has a different path from the original a scan finds, so the path alone can't tell.
 ///   AppController keeps a copy of the paths outside the database, like the folder roots, so a
 ///   rebuilt index gets them back.
+///
+/// Added in v4:
+/// - `sound_check_energy`: Music's Sound Check value for the song
+///   (`ITLibMediaItem.volumeNormalizationEnergy`, 0 = none, always 0 for a folder file), which
+///   playback turns into a gain (SoundCheck). Rows from v3 start at 0. Their stored content hash
+///   was made without this value, so the next ingest finds every Music-library row changed and
+///   rewrites it once, which fills the column in.
 enum LibrarySchema {
     static func migrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
@@ -57,6 +64,9 @@ enum LibrarySchema {
                   handed_at      INTEGER NOT NULL DEFAULT 0
                 );
                 """)
+        }
+        migrator.registerMigration("v4-sound-check") { db in
+            try db.execute(sql: "ALTER TABLE song ADD COLUMN sound_check_energy INTEGER NOT NULL DEFAULT 0")
         }
         return migrator
     }

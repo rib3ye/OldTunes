@@ -41,6 +41,11 @@ files on this Mac.
   System, which follows System Settings ▸ Appearance and switches when your Mac does. Dark is
   "Graphite": smoked brushed metal, and the LCD in its night mode, dark glass with lit sage
   letters. Match System is the default.
+- **Sound Check**, in the same Settings window, plays each song at the level the Music app
+  measured for it, so OldTunes and Music play it equally loud, cloud songs included. It's off
+  until you turn it on, as in Music.
+- **Its own volume.** The volume slider (and ⌘↑ / ⌘↓) sets OldTunes's volume for every song,
+  cloud songs too, and leaves the Mac's volume alone. OldTunes remembers it when you quit.
 - **Visualizer.** The flower button at the bottom right, or ⌘T, swaps the song list for a
   visualizer that moves with the music, cloud songs included, as iTunes 4.9 did. ⇧⌘F fills the
   screen with it; Esc comes back. Inside it, H lists its keys (R for something new, P M W for a new
@@ -60,11 +65,13 @@ add to the Music app** ticked, or change a playlist, macOS asks whether OldTunes
 Music. OldTunes uses that permission only to save tags, add songs and change playlists; it
 never tells Music to play.
 
-The first time you turn on the visualizer, macOS asks whether OldTunes may record system audio.
-Cloud songs are played by a separate Apple process, so this is how the visualizer hears them.
-OldTunes listens only to its own songs, only while the visualizer is on, and records or saves
-nothing. If you said no, the visualizer says it can't hear the music; turn OldTunes on in System
-Settings ▸ Privacy & Security ▸ Screen & System Audio Recording, under System Audio Recording Only.
+The first time OldTunes plays a cloud song, macOS asks whether OldTunes may record system audio.
+Allow it: cloud songs play in a separate Apple process, and OldTunes takes their sound from there
+so its volume slider and Sound Check can set their level, and so the visualizer can hear them.
+OldTunes listens only to its own songs and records or saves nothing. If you said no, cloud songs
+play at their own level, the volume slider moves the Mac's volume during them, and the visualizer
+says it can't hear the music; turn OldTunes on in System Settings ▸ Privacy & Security ▸ Screen &
+System Audio Recording, under System Audio Recording Only, then quit and reopen OldTunes.
 
 ## Build and run
 
@@ -131,7 +138,7 @@ runs on it.
 | ⌘I | Get Info |
 | ⌘B | Show / hide the browser |
 | ⌘O | Add Folder to Library |
-| ⌘, | Settings (appearance, visualizer HDR) |
+| ⌘, | Settings (appearance, Sound Check, visualizer HDR) |
 | ⌘1 | Bring back the main window after closing it (music keeps playing) |
 | ⌘T | Visualizer on / off |
 | ⇧⌘F | Visualizer full screen (Esc to come back) |
@@ -139,9 +146,12 @@ runs on it.
 
 ## Known limits
 
-- **Volume during cloud songs moves the Mac's volume.** Apple's MusicKit has no app-level
-  volume on macOS, so the slider controls the system output while a cloud song plays, and
-  OldTunes' own volume while a file plays.
+- **Cloud songs come out 25 ms late.** Apple's MusicKit has no volume control on macOS, so
+  OldTunes takes each cloud song's sound from Apple's player process and plays it out itself at
+  the right level. Without the System Audio Recording permission it can't: cloud songs then play
+  at their own level, and the volume slider moves the Mac's volume while one plays.
+- **Sound Check on files.** For a song with a file on this Mac, Sound Check can only make it
+  louder as far as the volume slider leaves room (Music can go further).
 - **Media keys right as a cloud song starts.** For about 0.15 s after a cloud song starts,
   a play/pause or next key can reach MusicKit's own player and pause the song.
 - **No AirPlay or crossfade** for cloud songs (MusicKit doesn't offer them on macOS).

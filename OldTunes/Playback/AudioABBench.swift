@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import GRDB
 import iTunesLibrary
 import MusicKit
 
@@ -8,11 +9,23 @@ import MusicKit
 /// Music? Plays the song Music has loaded (or OLDTUNES_AB_PID, 16 hex digits) from the same spot in
 /// each app, records what each app sends to the speakers through a muted process tap, and writes
 /// the two recordings to OLDTUNES_AB_DIR as oldtunes.wav and music.wav for a side-by-side analysis.
-/// OLDTUNES_AB_SONG=cloud picks an iCloud song instead. OLDTUNES_AB_START picks the spot in seconds;
-/// the default is about a third of the way in. Logs the song's Sound Check data from the iTunes
-/// Library framework, to compare with the gain Music applied.
+/// OLDTUNES_AB_SONG=cloud picks an iCloud song instead, and =cloud-boost the iCloud song whose Sound
+/// Check gain is nearest OLDTUNES_AB_BOOST_DB (default +4 dB). OLDTUNES_AB_START picks the spot in
+/// seconds; the default is about a third of the way in. Logs the song's Sound Check data from the
+/// iTunes Library framework, to compare with the gain Music applied.
+///
+/// OldTunes plays the song the way the app does: the index at OLDTUNES_DB_PATH (which must be inside
+/// a scratchpad folder, and may be a copy of the app's index from an older version) is brought up to
+/// date by a full ingest, and a PlaybackCoordinator plays the song's row with the slider at full and
+/// Sound Check on. A file sounds from AVQueuePlayer in OldTunes; an iCloud song from
+/// CloudAudioRoute, which plays RemotePlayerService's sound out again from OldTunes. Either way
+/// the tap listens to OldTunes alone. OLDTUNES_AB_SOUND_CHECK=off turns Sound Check off; an iCloud
+/// song then plays straight from MusicKit, tapped at RemotePlayerService, which measures its own
+/// level (the app would still play it out through the route, at the slider's volume).
 ///
 /// The taps are muted, so the run is silent, and a leg whose tap reads only zeros stops after 2 s.
+/// Before an iCloud song plays through the route, a tone at −80 dBFS, too quiet to hear, checks that
+/// the muted tap on OldTunes hears (and so mutes) what OldTunes plays through an aggregate device.
 /// Music is driven with AppleScript, which the app itself never does (MusicScriptingSession,
 /// §6.5); the run leaves Music paused where it found the song. Neither play should count:
 /// OldTunes's is kept out of listening history, and Music's stops after about 25 s.
@@ -41,13 +54,18 @@ enum AudioABBench {
         guard let found = MusicState.read() else { return }
         Log.info("AB: Music before: \(found)")
         let items = (try? ITLibrary(apiVersion: "1.0", options: .lazyLoadData))?.allMediaItems ?? []
+        Log.info("AB: the library's Sound Check data: \(librarySummary(items))")
         var chosen = env["OLDTUNES_AB_PID"] ?? (found.trackPID.isEmpty ? nil : found.trackPID)
-        if env["OLDTUNES_AB_SONG"] == "cloud" {
-            // A 2–7 minute iCloud song that Music has Sound Check data for, the first by persistent id.
-            chosen = items.filter { $0.mediaKind == .kindSong && $0.locationType != .file && $0.volumeNormalizationEnergy > 0
-                                    && (120_000...420_000).contains($0.totalTime) }
-                .min { $0.persistentID.uint64Value < $1.persistentID.uint64Value }
-                .map { MusicPersistentID.hex(Int64(bitPattern: $0.persistentID.uint64Value)) }
+        if let pick = env["OLDTUNES_AB_SONG"], pick == "cloud" || pick == "cloud-boost" {
+            // A 2–7 minute iCloud song that Music has Sound Check data for: the first by persistent
+            // id, or the one Sound Check raises most.
+            let songs = items.filter { $0.mediaKind == .kindSong && $0.locationType != .file && $0.volumeNormalizationEnergy > 0
+                                       && (120_000...420_000).contains($0.totalTime) }
+            let target = env["OLDTUNES_AB_BOOST_DB"].flatMap(Double.init) ?? 4
+            func distance(_ item: ITLibMediaItem) -> Double { abs(SoundCheck.decibels(energy: item.volumeNormalizationEnergy) - target) }
+            let song = pick == "cloud" ? songs.min { $0.persistentID.uint64Value < $1.persistentID.uint64Value }
+                                       : songs.min { (distance($0), $0.persistentID.uint64Value) < (distance($1), $1.persistentID.uint64Value) }
+            chosen = song.map { MusicPersistentID.hex(Int64(bitPattern: $0.persistentID.uint64Value)) }
         }
         guard let hex = chosen, let pid = MusicPersistentID.bitPattern(fromHex: hex) else {
             Log.error("AB: no song: Music has no current track and OLDTUNES_AB_PID is unset")
@@ -55,6 +73,7 @@ enum AudioABBench {
         }
         let item = items.first { Int64(bitPattern: $0.persistentID.uint64Value) == pid }
         Log.info("AB: Sound Check data for \(hex): \(item.map(soundCheck) ?? "not in the iTunes Library framework")")
+        let isFile = item.map { $0.locationType == .file && $0.location.map { FileManager.default.fileExists(atPath: $0.path) } == true } ?? false
         if found.state == "playing" {
             MusicScript.run(#"tell application "Music" to pause"#)
             Log.info("AB: paused Music, which was playing")
@@ -75,7 +94,9 @@ enum AudioABBench {
             Log.info("AB: MusicKit couldn't list the song's versions: \(error)")
         }
 
-        let oldTunes = await recordOldTunes(song, from: start, me: me)
+        let soundCheck = env["OLDTUNES_AB_SOUND_CHECK"] != "off"
+        let oldTunes = isFile || soundCheck ? await recordOldTunesApp(pid, isFile: isFile, from: start, soundCheck: soundCheck, me: me)
+                                            : await recordOldTunes(song, from: start, me: me)
         try? await Task.sleep(for: .milliseconds(500))
         let other = found.trackPID != hex && !found.trackPID.isEmpty
         let music = await recordMusic(hex, from: start, restore: other ? found.position.map { (found.trackPID, $0) } : nil)
@@ -161,14 +182,150 @@ enum AudioABBench {
         return take
     }
 
-    /// Music's Sound Check data, as the iTunes Library framework reports it, and the gain Music
-    /// applies for it: −20·log10(energy / 1000) dB, which matched this bench to 0.01 dB on two
-    /// songs. The iTunNORM-style −10·log10 gives half of that.
+    /// OldTunes's way, the app's own path end to end: the index holds the song's Sound Check value,
+    /// and PlaybackCoordinator hands it to LocalTransport (a file, sounding from AVQueuePlayer) or to
+    /// CloudTransport (an iCloud song, which CloudAudioRoute plays out again). Both sound from
+    /// OldTunes's own process, which is all the tap listens to.
+    static func recordOldTunesApp(_ pid: Int64, isFile: Bool, from start: Double, soundCheck: Bool, me: pid_t) async -> Take? {
+        guard let path = ProcessInfo.processInfo.environment["OLDTUNES_DB_PATH"], path.contains("/scratchpad/") else {
+            Log.error("AB OldTunes: the song plays from the app's index; set OLDTUNES_DB_PATH to an index inside a scratchpad folder")
+            return nil
+        }
+        let index: LibraryIndex
+        do {
+            index = try LibraryIndex(path: URL(fileURLWithPath: path))
+        } catch {
+            Log.error("AB OldTunes: could not open the index at \(path): \(error)")
+            return nil
+        }
+        let ingest = LibraryIngest(index: index)
+        let report = await ingest.refresh()
+        let id = try? await index.pool.read { db in
+            try Int64.fetchOne(db, sql: "SELECT id FROM song WHERE persistent_id = ?", arguments: [pid])
+        }
+        guard report.status == .ok, let id, let track = try? await index.tracks(ids: [id]).first, (track.fileURL != nil) == isFile else {
+            Log.error("AB OldTunes: the index has no \(isFile ? "playable file" : "iCloud row") for the song (ingest \(report.status))")
+            return nil
+        }
+        Log.info("AB OldTunes: index row \(track.id): Sound Check energy \(track.soundCheckEnergy), "
+                 + "gain \(f(SoundCheck.decibels(energy: track.soundCheckEnergy))) dB; Sound Check \(soundCheck ? "on" : "off"), slider at full")
+        guard let tap = ProcessTap.start(AudioTapBench.ownObject(me), label: "AB OldTunes") else {
+            Log.error("AB OldTunes: no tap")
+            return nil
+        }
+        if !isFile, !(await toneCheck(tap)) {
+            tap.stop()
+            return nil
+        }
+        let player = PlaybackCoordinator(library: index, cloud: ingest)
+        player.cloud.affectsListeningHistory = false
+        player.setVolume(1)
+        player.setSoundCheck(soundCheck)
+        player.play(queue: [track.id], startAt: track.id)
+        let transport: any Transport = isFile ? player.local : player.cloud
+        var take: Take?
+        if await waitUntil(15, { player.state.nowPlaying?.id == track.id && transport.isPlaying && !player.state.isLoading }) {
+            if !isFile { Log.info("AB OldTunes: \(routeStatus(player.cloud))") }
+            player.seek(to: start)
+            if await waitUntil(10, { transport.position >= start + settle }) {
+                take = await record(tap, label: "AB OldTunes") {
+                    isFile ? "AVQueuePlayer at \(f(player.local.position)) s, volume \(String(format: "%.4f", player.local.playerVolume)) "
+                        + "(\(f(20 * log10(Double(player.local.playerVolume)))) dB)"
+                        : "MusicKit at \(f(player.cloud.position)) s; \(routeStatus(player.cloud))"
+                }
+            } else {
+                Log.error("AB OldTunes: never reached \(f(start + settle)) s (at \(f(transport.position)) s)")
+            }
+        } else {
+            Log.error("AB OldTunes: the song did not start: \(player.state.lastError ?? "no reason given")")
+        }
+        // Silence the player before the tap goes, or its last moment would reach the speakers.
+        player.stop()
+        player.setSoundCheck(false)
+        try? await Task.sleep(for: .milliseconds(400))
+        tap.stop()
+        return take
+    }
+
+    static func routeStatus(_ cloud: CloudTransport) -> String {
+        guard let route = cloud.route else { return "no Sound Check route" }
+        let stats = route.stats
+        return "route \(route.mode.rawValue), \(route.isRunning ? "running" : "stopped") on \(route.outputDeviceName), "
+            + "gain \(f(20 * log10(Double(route.gain)))) dB, \(stats.buffers) buffers, \(stats.heard ? "heard sound" : "heard nothing")"
+    }
+
+    /// Before an iCloud song plays out through CloudAudioRoute: does a muted process tap on
+    /// OldTunes hear what OldTunes plays through a private aggregate device? If it didn't, it
+    /// wouldn't mute it either, and the song would be heard. So this plays a 1 kHz tone at −80 dBFS,
+    /// which can't be heard, through such a device and checks the tap read it.
+    static func toneCheck(_ tap: ProcessTap) async -> Bool {
+        guard let output = OutputDeviceVolume.defaultOutputDevice(), let uid = deviceUID(output) else {
+            Log.error("AB tone check: no default output device")
+            return false
+        }
+        let composition: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "OldTunes tone check",
+            kAudioAggregateDeviceUIDKey: "com.noahtsutsui.oldtunes.tonecheck." + UUID().uuidString,
+            kAudioAggregateDeviceMainSubDeviceKey: uid,
+            kAudioAggregateDeviceIsPrivateKey: 1,
+            kAudioAggregateDeviceIsStackedKey: 0,
+            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: uid]],
+        ]
+        var device = AudioObjectID(kAudioObjectUnknown)
+        guard AudioHardwareCreateAggregateDevice(composition as CFDictionary, &device) == noErr else {
+            Log.error("AB tone check: no aggregate device")
+            return false
+        }
+        defer { AudioHardwareDestroyAggregateDevice(device) }
+        let tone = ToneState()
+        var proc: AudioDeviceIOProcID?
+        guard AudioDeviceCreateIOProcIDWithBlock(&proc, device, nil, tone.ioBlock()) == noErr,
+              let proc else {
+            Log.error("AB tone check: no IOProc")
+            return false
+        }
+        defer { AudioDeviceDestroyIOProcID(device, proc) }
+        _ = tap.levels.take()
+        AudioDeviceStart(device, proc)
+        try? await Task.sleep(for: .milliseconds(600))
+        AudioDeviceStop(device, proc)
+        let window = tap.levels.take()
+        let rms = window.samples > 0 ? 20 * log10((window.sumSquares / Double(window.samples)).squareRoot()) : -.infinity
+        // A sine's RMS is 3 dB under its peak: −83 dBFS, less where the window caught silence.
+        let heard = rms > -95 && rms < -80
+        Log.info("AB tone check: the tap on OldTunes read \(window.summary) while a −80 dBFS tone played through an "
+                 + "aggregate device: \(heard ? "it hears (and mutes) what the route plays" : "it does NOT; stopping before any music")")
+        return heard
+    }
+
+    private static func deviceUID(_ device: AudioObjectID) -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr, let value else { return nil }
+        return value.takeRetainedValue() as String
+    }
+
+    /// Music's Sound Check data, as the iTunes Library framework reports it, and the gain it means
+    /// (SoundCheck).
     static func soundCheck(_ item: ITLibMediaItem) -> String {
         let energy = item.volumeNormalizationEnergy
-        let gain = energy > 0 ? String(format: "%+.2f dB", -20 * log10(Double(energy) / 1000)) : "none"
+        let gain = energy > 0 ? String(format: "%+.2f dB", SoundCheck.decibels(energy: energy)) : "none"
         return "normalization energy \(energy) (Sound Check gain \(gain)), volume adjustment \(item.volumeAdjustment), "
             + "location type \(item.locationType.rawValue), kind \(item.kind ?? "-")"
+    }
+
+    /// The whole library's Sound Check data in numbers, with no song named.
+    static func librarySummary(_ items: [ITLibMediaItem]) -> String {
+        let songs = items.filter { $0.mediaKind == .kindSong }
+        let measured = songs.map(\.volumeNormalizationEnergy).filter { $0 > 0 }
+        let gains = measured.map { SoundCheck.decibels(energy: $0) }.sorted()
+        let files = songs.filter { $0.locationType == .file }.map { f(SoundCheck.decibels(energy: $0.volumeNormalizationEnergy)) }
+        let median = gains.isEmpty ? 0 : gains[gains.count / 2]
+        return "\(measured.count) of \(songs.count) songs measured; gains \(f(gains.first ?? 0)) to \(f(gains.last ?? 0)) dB, "
+            + "median \(f(median)) dB; \(gains.filter { $0 > 0 }.count) made louder, \(gains.filter { $0 > 2.5 }.count) by more than 2.5 dB; "
+            + "files \(files.joined(separator: ", ")) dB; \(songs.filter { $0.volumeAdjustment != 0 }.count) songs with a volume adjustment"
     }
 
     /// Music's way, driven with AppleScript and heard from Music's own process. `restore` puts
@@ -219,8 +376,8 @@ enum AudioABBench {
         return take
     }
 
-    /// Pauses Music until it has stayed paused for a second (10 polls), then moves it to `position`.
-    /// False if it was still playing after 5 s.
+    /// Pauses Music, then moves it to `position`, and checks for a second that it stays paused,
+    /// pausing again whenever a start Music was still making wins. False if it still plays after 5 s.
     static func holdPaused(at position: Double?) async -> Bool {
         var quietTicks = 0
         var placed = false
@@ -396,5 +553,34 @@ struct MusicState: CustomStringConvertible {
             """
         guard let fields = MusicScript.run(source)?.components(separatedBy: "\t"), fields.count == 2 else { return nil }
         return (fields[0], Double(fields[1]) ?? 0)
+    }
+}
+
+/// The tone check's 1 kHz sine at −80 dBFS, on every output channel. Only its IOProc touches the
+/// phase, one buffer list at a time, hence unchecked.
+final class ToneState: @unchecked Sendable {
+    private var phase = 0.0
+    private let step = 2 * Double.pi * 1000 / 48_000
+
+    /// Made here, outside the main actor: a block made in main-actor code is checked for the main
+    /// thread when Core Audio calls it on its IO thread, and traps (it did, on October 20).
+    func ioBlock() -> AudioDeviceIOBlock {
+        { _, _, _, output, _ in self.fill(output) }
+    }
+
+    func fill(_ output: UnsafeMutablePointer<AudioBufferList>) {
+        var frames = 0
+        for buffer in UnsafeMutableAudioBufferListPointer(output) {
+            guard let data = buffer.mData else { continue }
+            let channels = max(1, Int(buffer.mNumberChannels))
+            let count = Int(buffer.mDataByteSize) / (MemoryLayout<Float>.size * channels)
+            let out = data.assumingMemoryBound(to: Float.self)
+            for frame in 0..<count {
+                let value = Float(1e-4 * sin(phase + step * Double(frame)))
+                for channel in 0..<channels { out[frame * channels + channel] = value }
+            }
+            frames = count
+        }
+        phase = (phase + step * Double(frames)).truncatingRemainder(dividingBy: 2 * .pi)
     }
 }
