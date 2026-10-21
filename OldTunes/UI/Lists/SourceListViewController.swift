@@ -192,7 +192,7 @@ final class SourceListViewController: NSViewController {
 
     private let library: any LibraryReading
     private let table = RetroTableView(rowHeight: Theme.Metrics.sourceRowHeight)
-    private let scrollView = RetroScrollView(lineHeight: Theme.Metrics.sourceRowHeight, autohides: true)
+    private let scrollView = RetroScrollView(lineHeight: Theme.Metrics.sourceRowHeight)
     private let header = PaneHeaderView(title: "Source")
     private var playlists: [PlaylistInfo] = []
     private var rows: [Row] = []

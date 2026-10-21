@@ -1,7 +1,8 @@
 import AppKit
 
-/// The Mac OS X 10.4 scroller: 15 pt, always visible, inset trough, blue gel knob, and the arrow
-/// pair together at the bottom (or right) end. RESEARCH.md §8.3.
+/// The Mac OS X 10.4 scroller: 15 pt, never an overlay, inset trough, blue gel knob, and the arrow
+/// pair together at the bottom (or right) end. RESEARCH.md §8.3. RetroScrollView hides it when
+/// there is nothing to scroll.
 ///
 /// Modern NSScroller has no arrows at all — `rect(for:)` returns zero for them and
 /// `trackScrollButtons` is never called — so this class owns its geometry, hit-testing and the
@@ -25,8 +26,9 @@ final class AquaScroller: NSScroller {
 
     // MARK: Legacy mode
 
-    /// FALSE pins the scroll view to legacy, always-visible scrollers whatever the user's
-    /// preference is (§8.3: setting `.overlay` explicitly was refused once this is false).
+    /// FALSE pins the scroll view to legacy scrollers, which take their own room and never fade,
+    /// whatever the user's preference is (§8.3: setting `.overlay` explicitly was refused once
+    /// this is false).
     override class var isCompatibleWithOverlayScrollers: Bool { false }
 
     override class func scrollerWidth(for controlSize: NSControl.ControlSize,

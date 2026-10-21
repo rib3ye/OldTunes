@@ -279,17 +279,20 @@ final class ListsStressBench {
         tracks.setNowPlaying(12345, isPlaying: true)
         window.displayIfNeeded()
         let scroller = tracks.listScrollView.verticalScroller as? AquaScroller
-        check("a search with no matches shows an empty list", tracks.order.isEmpty && tracks.selectedIDs.isEmpty
-              && orderEvents.last == [] && selectionEvents == selectionBefore + 1 && scroller?.knobRect == .zero,
+        check("a search with no matches shows an empty list and no scroller", tracks.order.isEmpty && tracks.selectedIDs.isEmpty
+              && orderEvents.last == [] && selectionEvents == selectionBefore + 1 && scroller?.knobRect == .zero
+              && scroller?.isHidden == true,
               "rows \(tracks.order.count), onOrderChange \(orderEvents.map(\.count)), "
-              + "selection events +\(selectionEvents - selectionBefore), knob \(scroller?.knobRect ?? .null)")
+              + "selection events +\(selectionEvents - selectionBefore), knob \(scroller?.knobRect ?? .null), "
+              + "scroller \(scroller?.isHidden == true ? "hidden" : "shown")")
         snapshot("S3_no_matches.png")
         tracks.setNowPlaying(nil, isPlaying: false)
         tracks.query.search = ""
         await tracks.waitForLoad()
         await pause(300)
-        check("clearing it brings the rows and the knob back", tracks.order.count > 15_000
-              && scroller?.knobRect != .zero && blankVisibleRows().isEmpty, "\(tracks.order.count) rows")
+        check("clearing it brings the rows, the scroller and its knob back", tracks.order.count > 15_000
+              && scroller?.isHidden == false && scroller?.knobRect != .zero && blankVisibleRows().isEmpty,
+              "\(tracks.order.count) rows")
     }
 
     /// A re-sort that keeps the same selected songs is not a selection change.

@@ -9,7 +9,7 @@ final class RetroScrollView: NSScrollView {
     @available(macOS 27.0, *)
     override var cornerConfiguration: NSViewCornerConfiguration? { nil }
 
-    init(lineHeight: CGFloat, horizontal: Bool = false, autohides: Bool = false) {
+    init(lineHeight: CGFloat, horizontal: Bool = false) {
         super.init(frame: .zero)
         // hasVerticalScroller is what turns the scroller on; assigning one alone leaves it hidden.
         hasVerticalScroller = true
@@ -18,7 +18,9 @@ final class RetroScrollView: NSScrollView {
         if horizontal {
             horizontalScroller = AquaScroller(frame: NSRect(x: 0, y: 0, width: 100, height: Theme.Metrics.scrollerWidth))
         }
-        autohidesScrollers = autohides
+        // A scroller shows only when there is something to scroll: a list that fits has no empty
+        // trough beside it (Noah's call, October 20, 2026; RESEARCH.md's corrections table).
+        autohidesScrollers = true
         scrollerStyle = .legacy
         borderType = .noBorder
         drawsBackground = true

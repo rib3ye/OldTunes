@@ -18,6 +18,8 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 92N52YB23U
     CODE_SIGN_STYLE: Automatic
+    # The version people see. Releases set the build number to main's commit count
+    # (tools/release.sh); everyday builds stay at 1.
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_HARDENED_RUNTIME: YES
@@ -50,6 +52,8 @@ targets:
       properties:
         CFBundleDisplayName: OldTunes
         CFBundleName: OldTunes
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.music
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
