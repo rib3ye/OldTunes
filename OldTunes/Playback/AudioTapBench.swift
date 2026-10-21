@@ -210,8 +210,12 @@ private func millis(_ host: UInt64, since: UInt64) -> String {
 @available(macOS 14.2, *)
 final class ProcessTap {
     let levels = TapLevels()
+    /// Keeps the samples themselves while started; AudioABBench writes them to a file.
+    let recording = TapRecording()
     /// What was built, for the log.
     private(set) var setup = ""
+    /// The aggregate device's rate, which is the rate of the recorded samples.
+    private(set) var sampleRate: Double = 0
     private var tapID = ProcessTap.unknown
     private var deviceID = ProcessTap.unknown
     private var procID: AudioDeviceIOProcID?
@@ -258,8 +262,10 @@ final class ProcessTap {
         ]
         try check("AudioHardwareCreateAggregateDevice", AudioHardwareCreateAggregateDevice(composition as CFDictionary, &deviceID))
         let levels = levels
+        let recording = recording
         try check("AudioDeviceCreateIOProcIDWithBlock", AudioDeviceCreateIOProcIDWithBlock(&procID, deviceID, queue) { now, input, inputTime, output, _ in
             levels.record(input, now: now.pointee, inputTime: inputTime.pointee)
+            recording.append(input)
             // The output device's streams are part of the aggregate; keep them silent.
             for buffer in UnsafeMutableAudioBufferListPointer(output) {
                 if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
@@ -269,6 +275,7 @@ final class ProcessTap {
         try check("AudioDeviceStart", AudioDeviceStart(deviceID, procID))
 
         let rate = Self.read(deviceID, kAudioDevicePropertyNominalSampleRate, Float64(0)) ?? 0
+        sampleRate = rate
         let frames = Self.read(deviceID, kAudioDevicePropertyBufferFrameSize, UInt32(0)) ?? 0
         let latency = Self.read(deviceID, kAudioDevicePropertyLatency, UInt32(0), scope: kAudioObjectPropertyScopeInput)
         let safety = Self.read(deviceID, kAudioDevicePropertySafetyOffset, UInt32(0), scope: kAudioObjectPropertyScopeInput)
@@ -443,6 +450,49 @@ final class TapLevels: Sendable {
         let s = state.withLock { $0 }
         guard s.firstCallback != 0 else { return "the IOProc never ran" }
         return "first IOProc call \(millis(s.firstCallback, since: s.startedAt)) ms after AudioDeviceStart, \(s.layout)"
+    }
+}
+
+/// The tap's samples, kept between start(frames:) and finish(), as the IOProc hands them over:
+/// interleaved 32-bit float, which the setup line confirms.
+final class TapRecording: Sendable {
+    private struct State: Sendable {
+        var samples: [Float] = []
+        var limit = 0
+        var channels = 0
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// Room for `frames` of stereo is reserved up front, so the IO queue never waits on a reallocation.
+    func start(frames: Int) {
+        var fresh = State()
+        fresh.samples.reserveCapacity(frames * 2)
+        fresh.limit = frames * 2
+        let initial = fresh
+        state.withLock { $0 = initial }
+    }
+
+    func append(_ input: UnsafePointer<AudioBufferList>) {
+        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        guard let buffer = buffers.first, let data = buffer.mData else { return }
+        let channels = Int(buffer.mNumberChannels)
+        let samples = UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float32.self),
+                                          count: Int(buffer.mDataByteSize) / MemoryLayout<Float32>.size)
+        // Unchecked: the samples are copied inside the lock and never escape it.
+        state.withLockUnchecked { s in
+            guard s.samples.count < s.limit else { return }
+            s.channels = channels
+            s.samples.append(contentsOf: samples.prefix(s.limit - s.samples.count))
+        }
+    }
+
+    /// The interleaved samples and their channel count; stops keeping new ones.
+    func finish() -> (samples: [Float], channels: Int) {
+        state.withLock { s in
+            defer { s = State() }
+            return (s.samples, s.channels)
+        }
     }
 }
 

@@ -11,7 +11,8 @@ import MusicKit
 /// MediaKeyBench (needs its outside driver); =quit quits mid-stream without stop(); =fixes runs only
 /// ReviewFixBench, which the default mode also runs after the main bench; =tap runs AudioTapBench,
 /// which reads a cloud and a local song through a Core Audio process tap (asks for System Audio
-/// Recording the first time).
+/// Recording the first time); =ab runs AudioABBench, which records one song from OldTunes and from
+/// Music for a side-by-side comparison.
 /// Cloud plays are kept out of the Music library's play history (affectsListeningHistory).
 /// The volume checks move the Mac's output volume, so they run only with OLDTUNES_PLAYBACK_VOLUME=1.
 @MainActor
@@ -19,6 +20,17 @@ enum PlaybackHarness {
     static func run() async {
         let mode = ProcessInfo.processInfo.environment["OLDTUNES_PLAYBACK_MODE"] ?? "all"
         Log.info("playback harness: mode=\(mode) auth=\(MusicAuthorization.currentStatus) pid=\(ProcessInfo.processInfo.processIdentifier)")
+        if mode == "ab" {
+            // Needs only the one song Music has loaded, not the harness library.
+            if #available(macOS 14.2, *) {
+                await AudioABBench.run()
+            } else {
+                Log.error("AB: process taps need macOS 14.2")
+            }
+            Log.flush()
+            NSApp.terminate(nil)
+            return
+        }
         do {
             let loaded = try await PlaybackHarnessLibrary.load(cloudLimit: 30)
             Log.info("playback harness: locals=\(loaded.locals.count) clouds=\(loaded.clouds.count)")
