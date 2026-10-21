@@ -19,7 +19,8 @@
 //  Changed for OldTunes, 2026: the engine part of main.js (Geiss HDR v335), ported to Swift: the
 //  clocks and the frame-rate rule of render() and frame(), the palette blend, the band levels and the
 //  beat detector, and the key commands as an enum. The song list, help screens, toasts' drawing and
-//  palette editing are not ported. Space's "randomize everything" is the R command here.
+//  palette editing are not ported. Space's "randomize everything" is the R command here. Motion speed
+//  starts at 0.25x, a quarter of the original's 1x, and 0 resets it to that.
 
 import Foundation
 
@@ -95,6 +96,8 @@ public final class VisualizerDriver {
     static let paletteHoldMax = WarpSlots.generalTransitionSpeed * 32
     static let paletteBlendMin = WarpSlots.generalTransitionSpeed * 4
     static let paletteBlendMax = WarpSlots.generalTransitionSpeed * 8
+    /// Motion speed at the start and after 0 (the original's is 1).
+    static let defaultMotionScale = 0.25
     static let minMotionScale = pow(2.0, -10.0)
     static let maxMotionScale = pow(2.0, 4.0)
     static let maxTextureDimension = 8192.0
@@ -165,7 +168,7 @@ public final class VisualizerDriver {
     /// Multiply the wave by this when making the AudioFrame (`getFrame({ waveScale })`).
     public private(set) var waveScale = 1.0
     public private(set) var waveSmoothing = 2
-    public private(set) var motionScale = 1.0
+    public private(set) var motionScale = VisualizerDriver.defaultMotionScale
     public private(set) var transitionSpeed = 1.0
     /// The feedback buffer is the view's size in points times this (`indexSize`).
     public private(set) var oversample = 1.0
@@ -661,8 +664,8 @@ public final class VisualizerDriver {
             transitionSpeed = 1.0
             messages.append(transitionSpeedMessage("reset"))
         }
-        if abs(motionScale - 1.0) > 0.0001 {
-            motionScale = 1.0
+        if abs(motionScale - Self.defaultMotionScale) > 0.0001 {
+            motionScale = Self.defaultMotionScale
             messages.append("Motion speed reset to \(Self.fixed(motionScale, 3))x")
         }
         if abs(brightness - 1.0) > 0.0001 {
