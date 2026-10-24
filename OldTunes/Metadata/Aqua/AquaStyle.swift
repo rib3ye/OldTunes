@@ -99,15 +99,25 @@ enum AquaStyle {
     private static let blueGels = Theme.Themed(
         light: gel([0x3F6FB4, 0x1D4C98, 0xB4D6F8, 0x76AFEE, 0x4B91E6, 0xA6DCFF], 0.75),
         dark: gel([0x1F4C8C, 0x0F3066, 0x86B0E2, 0x4A84D0, 0x2C68C2, 0x76ADE8], 0.5))
-    /// The top of the default button's breath.
+    /// Aqua blue on a wide gel: the default button at rest and the selected tab. By day it is
+    /// `blueGel`. At night `blueGel` on a shape that wide is mostly shine, and it read paler than a
+    /// checked box or the sorted column beside it, so these take a deeper gel with less shine
+    /// (RESEARCH.md §7.7).
+    static var wideBlueGel: Gel { wideBlueGels.current }
+    private static let wideBlueGels = Theme.Themed(
+        light: blueGels.light,
+        dark: gel([0x1A4078, 0x0C2652, 0x6690CA, 0x366BB5, 0x2257A6, 0x4B8AD4], 0.4))
+    /// The top of the default button's breath. At night it brightens but keeps its color, so the
+    /// breath stays the same blue.
     static var blueGelBright: Gel { blueGelsBright.current }
     private static let blueGelsBright = Theme.Themed(
         light: gel([0x5583C4, 0x2E5FAA, 0xD6EAFD, 0xA3CDF7, 0x7AB8F3, 0xCDEFFF], 0.85),
-        dark: gel([0x3062A6, 0x1A4384, 0xA4C6EE, 0x6C9FE0, 0x4A85D6, 0x98C8F4], 0.6))
+        dark: gel([0x1F4C8C, 0x0F3066, 0x80AADD, 0x4C84CD, 0x3069BF, 0x64A2E6], 0.45))
+    /// At night a clear step below `wideBlueGel`, so pressing OK still darkens it.
     static var bluePressedGel: Gel { bluePressedGels.current }
     private static let bluePressedGels = Theme.Themed(
         light: gel([0x274E8A, 0x14376F, 0x86B4E8, 0x4D88D8, 0x2C6BC6, 0x76B8F0], 0.6),
-        dark: gel([0x143A70, 0x0A2350, 0x5F8CC6, 0x30649F, 0x1D4F99, 0x548ACB], 0.35))
+        dark: gel([0x0F2E5C, 0x081C42, 0x4D78B0, 0x24538B, 0x164384, 0x4677B5], 0.3))
     static var disabledGel: Gel { disabledGels.current }
     private static let disabledGels = Theme.Themed(
         light: gel([0xB5B5B5, 0xA2A2A2, 0xFAFAFA, 0xF1F1F1, 0xEAEAEA, 0xF7F7F7], 0.35),

@@ -47,7 +47,7 @@ final class AquaButton: NSControl {
         let gel: AquaStyle.Gel
         if !isEnabled { gel = AquaStyle.disabledGel }
         else if isPressed { gel = AquaStyle.bluePressedGel }
-        else if isDefault { gel = AquaStyle.blueGel.blended(with: AquaStyle.blueGelBright, fraction: pulseFraction) }
+        else if isDefault { gel = AquaStyle.wideBlueGel.blended(with: AquaStyle.blueGelBright, fraction: pulseFraction) }
         else { gel = AquaStyle.whiteGel }
         AquaStyle.drawGel(in: rect, radius: rect.height / 2, gel: gel, flipped: true)
 

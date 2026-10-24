@@ -1106,6 +1106,18 @@ gel drop shadow black 13% → 35%; scroller end shade black 22% → 45%. Aqua ge
 rim bottom, body top, mid top, mid bottom, body bottom, highlight): graphite `#18191B #0C0D0E
 #6C6E72 #57595D #46484C #5F6165` 22%; blue `#1F4C8C #0F3066 #86B0E2 #4A84D0 #2C68C2 #76ADE8` 50%.
 
+**Blue on wide gels at night (2026-10-23).** On OK and on the selected Get Info tab that blue gel
+read paler than on a checked box or the sorted column beside them: a shape that wide is mostly
+shine, and OK's breath paled it further. Mean CIELAB L* over each blue, drawn at 2x on the dark
+pinstripes: OK 63 at rest, 67 mid-breath, 70 at the peak, its chroma falling 37 → 32; the selected
+tab 64; the checked box 62, or 49 counting its black tick; the sorted column 43. So both take their
+own gel, `wideBlueGel`, a step deeper with less shine: `#1A4078 #0C2652 #6690CA #366BB5 #2257A6
+#4B8AD4` 40%. OK breathes toward `#1F4C8C #0F3066 #80AADD #4C84CD #3069BF #64A2E6` 45%, which
+brightens without paling: it now reads 53 → 57 → 60 with chroma 40 → 38, in the column's hue, and
+the selected tab 54. Pressed blue went a step deeper with them, `#0F2E5C #081C42 #4D78B0 #24538B
+#164384 #4677B5` 30% (L* 51 → 44), so pressing OK still darkens it; a checkbox or radio pressed
+while on shares it. By day nothing changed: both are still the blue gel, pixel for pixel.
+
 ---
 
 ## 8. AppKit implementation notes

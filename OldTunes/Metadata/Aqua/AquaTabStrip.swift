@@ -56,7 +56,7 @@ final class AquaTabStrip: NSView {
         if tabRects.indices.contains(selectedIndex) {
             NSGraphicsContext.saveGraphicsState()
             NSBezierPath(rect: tabRects[selectedIndex]).addClip()
-            AquaStyle.drawGel(in: whole, radius: radius, gel: AquaStyle.blueGel, flipped: true, shadow: false)
+            AquaStyle.drawGel(in: whole, radius: radius, gel: AquaStyle.wideBlueGel, flipped: true, shadow: false)
             NSGraphicsContext.restoreGraphicsState()
         }
 
