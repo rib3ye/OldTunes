@@ -228,10 +228,17 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
         do {
             snapshot = try await itlib.load()
         } catch ITLibSource.LoadError.emptyLibrary {
-            // Never wipe the index on this: an unauthorized read looks exactly like an empty library.
-            report.status = .notAuthorized(Self.permissionMessage)
-            Log.error("library: iTunesLibrary returned no items; treating as not authorized")
-            return report
+            // Never wipe the index on iTunesLibrary's word alone: an unauthorized read looks exactly
+            // like an empty library (§3.6). MusicKit throws instead when it may not read the library,
+            // so when it found no songs either, the library really is empty.
+            guard Self.confirmsEmptyLibrary(await musicKit), let empty = try? await itlib.load(acceptingEmpty: true) else {
+                report.status = .notAuthorized(Self.permissionMessage)
+                Log.error("library: iTunesLibrary returned no items and MusicKit did not confirm an empty library; " +
+                          "treating as not authorized")
+                return report
+            }
+            Log.info("library: iTunesLibrary and MusicKit both found no songs; the Music library is empty")
+            snapshot = empty
         } catch {
             report.status = .failed(error.localizedDescription)
             Log.error("library: iTunesLibrary failed: \(error)")
@@ -301,6 +308,13 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
 
     private static func fetchMusicKitLibrary() async -> Result<MusicKitSource.Library, any Error> {
         do { return .success(try await MusicKitSource.librarySongs()) } catch { return .failure(error) }
+    }
+
+    /// Whether MusicKit's answer shows that a Music library iTunesLibrary read as empty really is
+    /// empty: the request went through and found no songs. A failed request shows nothing.
+    static func confirmsEmptyLibrary(_ musicKit: Result<MusicKitSource.Library, any Error>) -> Bool {
+        guard case .success(let library) = musicKit else { return false }
+        return library.returned == 0
     }
 
     static let permissionMessage = "OldTunes can't read your music library. Open System Settings ▸ Privacy & Security ▸ " +
