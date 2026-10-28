@@ -200,6 +200,8 @@ runs on it.
   `swift tools/make-app-icon.swift` on your Mac from the repo root.
 - `OldTunes/Model/Contracts.swift` — the protocols between modules. Only
   `OldTunes/App/AppController.swift` wires concrete types together.
+- `Vendor/CXXMonkeysAudio` — the Monkey's Audio package SFBAudioEngine uses, with a permissively
+  licensed MD5 in place of a GPL one. `Vendor/README.md` says why and when to remove it.
 - Test benches: launch with `open -n --env OLDTUNES_HARNESS=<name> …/OldTunes.app` where
   `<name>` is `smoke` (end to end), `library`, `playback`, `metadata`, `chrome`, `lists`,
   `appearance` (light and dark, with an invented library), `visualizer` (pick a part with

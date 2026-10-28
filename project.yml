@@ -18,6 +18,11 @@ packages:
   SFBAudioEngine:
     url: https://github.com/sbooth/SFBAudioEngine
     exactVersion: 0.14.0
+  # Monkey's Audio, which SFBAudioEngine pulls in, built from Vendor/ instead of GitHub: a local
+  # package replaces the remote one of the same name. Its only change is an MD5.cpp under RSA's
+  # permissive licence in place of a GPL one; Vendor/README.md says why and when to remove it.
+  CXXMonkeysAudio:
+    path: Vendor/CXXMonkeysAudio
 settings:
   base:
     SWIFT_VERSION: "6.0"
