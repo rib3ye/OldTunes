@@ -3,7 +3,7 @@ import AppKit
 /// OLDTUNES_HARNESS=chrome — test bench for the brushed-metal window chrome.
 ///
 /// Shows the real MetalWindowController with placeholder panes and a fake "Brushfire Fairytales"
-/// state, writes snapshots (756×500, 1200×800, toggled, hover, inactive, minimum size, full
+/// state, writes snapshots (756×500, 1200×800, toggled, volume greyed out, hover, inactive, minimum size, full
 /// screen), pixel-checks them against RESEARCH.md §7, drives every control with synthetic events
 /// through real AppKit dispatch, and logs one PASS/FAIL line per check before quitting. The edge
 /// cases (rich paste, CJK, mid-drag song changes, foreign delegates…) are in ChromeHarnessEdges;
@@ -361,6 +361,28 @@ enum ChromeHarness {
         check("volume follows state", abs(bar.volumeSlider.value - 0.2) < 0.001, "knob \(bar.volumeSlider.value)")
         bar.update(sampleState())
 
+        // Greyed out, as during an iCloud song OldTunes can't set the level of: the slider ignores
+        // a drag, a click on the small speaker and the scroll wheel, and still follows the state.
+        let wheelUp = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 5, wheel2: 0, wheel3: 0)
+            .flatMap { NSEvent(cgEvent: $0) }
+        volumes.removeAll()
+        if let wheelUp { bar.volumeSlider.scrollWheel(with: wheelUp) }
+        let wheeled = volumes.count
+        bar.update(sampleState())
+        var greyed = sampleState(); greyed.isVolumeEnabled = false; greyed.volume = 0.3
+        bar.update(greyed)
+        volumes.removeAll()
+        Probe.drag(window, through: [NSPoint(x: 50, y: 75), NSPoint(x: 70, y: 75), NSPoint(x: 100, y: 75)])
+        Probe.click(window, at: NSPoint(x: 28, y: 75))
+        if let wheelUp { bar.volumeSlider.scrollWheel(with: wheelUp) }
+        check("greyed-out volume ignores drag, speaker click and wheel",
+              wheeled > 0 && !bar.volumeSlider.isEnabled && volumes.isEmpty && abs(bar.volumeSlider.value - 0.3) < 0.001,
+              "wheel moved it \(wheeled) times while enabled; greyed out: enabled \(bar.volumeSlider.isEnabled), "
+              + "\(volumes.count) changes, knob \(bar.volumeSlider.value) (want 0.3)")
+        bar.update(sampleState())
+        check("volume enabled again with the state", bar.volumeSlider.isEnabled && abs(bar.volumeSlider.value - 0.6) < 0.001,
+              "enabled \(bar.volumeSlider.isEnabled), knob \(bar.volumeSlider.value)")
+
         // Scrubber: press, drag, and while held feed a state that says 10 s; the thumb must ignore it.
         let scrub = bar.lcd.convert(bar.lcd.scrubberRect, to: nil)
         let sy = window.frame.height - scrub.midY
@@ -526,6 +548,25 @@ enum ChromeHarness {
         bar.searchText = ""
         window.makeFirstResponder(nil)
         bar.lcd.cycleDetailMode(); bar.lcd.cycleDetailMode()
+
+        // Greyed out, the volume slider fades as one piece: its small speaker glyph stands out from
+        // the metal under the slider about half as much (alpha 0.55), and still shows.
+        bar.update(sampleState())
+        await Probe.pause(0.1)
+        let litSlider = snapshot(window, "chrome_volume_enabled.png", out: out)
+        var greyed = sampleState(); greyed.isVolumeEnabled = false
+        bar.update(greyed)
+        await Probe.pause(0.1)
+        if let lit = litSlider, let dim = snapshot(window, "chrome_volume_greyed.png", out: out) {
+            func contrast(_ px: ChromeHarnessProbe.Pixels) -> Int {
+                let glyph = px.rgb(27.5, 75), metal = px.rgb(27.5, 87)
+                return abs(glyph.r - metal.r) + abs(glyph.g - metal.g) + abs(glyph.b - metal.b)
+            }
+            let before = contrast(lit), after = contrast(dim)
+            check("greyed-out volume draws dimmed", before > 60 && Double(after) < 0.75 * Double(before) && Double(after) > 0.3 * Double(before),
+                  "speaker glyph against the metal: \(before) enabled, \(after) greyed out (sum of RGB differences)")
+        }
+        bar.update(sampleState())
 
         let lights = controller.metalView.titleBar.trafficLights
         lights.isHovering = true

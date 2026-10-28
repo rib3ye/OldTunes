@@ -247,8 +247,7 @@ final class AppController: NSObject {
     static let volumeKey = "OldTunes.volume"
 
     /// The slider and ⌘↑/⌘↓. OldTunes's own volume is kept between launches, as iTunes kept its
-    /// own; the Mac's volume, which the slider moves only when OldTunes can't set an iCloud song's
-    /// level itself, is the system's to keep.
+    /// own. Both grey out during an iCloud song OldTunes can't set the level of.
     private func setVolume(_ volume: Float) {
         player.setVolume(volume)
         UserDefaults.standard.set(player.appVolume, forKey: Self.volumeKey)
@@ -708,6 +707,8 @@ extension AppController: NSMenuItemValidation {
             menuItem.title = tracks.isBrowserVisible ? "Hide Browser" : "Show Browser"
         case #selector(playPauseAction(_:)):
             menuItem.title = player.state.isPlaying ? "Pause" : "Play"
+        case #selector(volumeUp(_:)), #selector(volumeDown(_:)):
+            return player.state.isVolumeEnabled
         case #selector(toggleVisualizer(_:)):
             menuItem.title = visualizer?.isOn == true ? "Turn Off Visualizer" : "Turn On Visualizer"
         case #selector(toggleVisualizerFullScreen(_:)):

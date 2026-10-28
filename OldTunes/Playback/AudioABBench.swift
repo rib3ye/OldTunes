@@ -50,7 +50,7 @@ enum AudioABBench {
             return
         }
         let me = ProcessInfo.processInfo.processIdentifier
-        Log.info("AB: OldTunes pid=\(me), permission \(AudioCapturePermission.describe(AudioCapturePermission.preflight()))")
+        Log.info("AB: OldTunes pid=\(me), permission \(await SystemAudioProbe.run().rawValue)")
         guard let found = MusicState.read() else { return }
         Log.info("AB: Music before: \(found)")
         let items = (try? ITLibrary(apiVersion: "1.0", options: .lazyLoadData))?.allMediaItems ?? []
@@ -259,7 +259,7 @@ enum AudioABBench {
     /// wouldn't mute it either, and the song would be heard. So this plays a 1 kHz tone at −80 dBFS,
     /// which can't be heard, through such a device and checks the tap read it.
     static func toneCheck(_ tap: ProcessTap) async -> Bool {
-        guard let output = OutputDeviceVolume.defaultOutputDevice(), let uid = deviceUID(output) else {
+        guard let output = HAL.defaultOutputDevice(), let uid = HAL.deviceUID(output) else {
             Log.error("AB tone check: no default output device")
             return false
         }
@@ -296,15 +296,6 @@ enum AudioABBench {
         Log.info("AB tone check: the tap on OldTunes read \(window.summary) while a −80 dBFS tone played through an "
                  + "aggregate device: \(heard ? "it hears (and mutes) what the route plays" : "it does NOT; stopping before any music")")
         return heard
-    }
-
-    private static func deviceUID(_ device: AudioObjectID) -> String? {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal,
-                                                 mElement: kAudioObjectPropertyElementMain)
-        var value: Unmanaged<CFString>?
-        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr, let value else { return nil }
-        return value.takeRetainedValue() as String
     }
 
     /// Music's Sound Check data, as the iTunes Library framework reports it, and the gain it means

@@ -8,13 +8,15 @@ import VisualizerCore
 /// scratchpad folder, as for the ab mode). Logs a PASS or FAIL line per check:
 /// - routing plays the song out times its Sound Check gain;
 /// - Sound Check off mid-song leaves only OldTunes's volume, and on again brings the gain back;
-/// - the volume slider sets the level of what the route plays and leaves the Mac's volume alone;
+/// - the first iCloud song finds the System Audio Recording permission on (SystemAudioProbe);
+/// - the volume slider sets the level of what the route plays;
 /// - routing survives a rebuild, as after a change of output device;
 /// - the next song gets its own gain;
-/// - a route without the System Audio Recording permission (simulated) gives up and lets the song
-///   play directly, hands the slider back to the Mac's volume, and routes again from the next song
-///   once it has heard sound. The silence watch is on here even when the permission was granted at
-///   launch, which turns it off in the app;
+/// - a song that opens silent (simulated) stays routed: the probe still hears its tone, so the
+///   silence is the song's own;
+/// - a route without the permission (simulated, the probe included) gives up and lets the song
+///   play directly, greys the slider out, and routes again from the next song once it has heard
+///   sound;
 /// - the visualizer's tap, made as VisualizerController makes it, takes OldTunes alone while the route
 ///   plays the song out (so it hears the song once), and RemotePlayerService again while it doesn't.
 ///
@@ -71,6 +73,8 @@ enum CloudRouteBench {
 
         // Routing.
         guard await startSong(quieter, in: [quieter, louder], player) else { return }
+        check("the first iCloud song finds System Audio Recording on", player.cloud.permission == .granted,
+              "probe answered \(player.cloud.permission?.rawValue ?? "nothing yet")")
         await compare("routing plays the song out times its gain", own, remote, gain: quieter, player)
         if let dir = ProcessInfo.processInfo.environment["OLDTUNES_ROUTE_DIR"] {
             await recordBoth(own, remote, seconds: 10, to: URL(fileURLWithPath: dir, isDirectory: true), suffix: "")
@@ -95,14 +99,12 @@ enum CloudRouteBench {
         await compare("Sound Check on mid-song brings the song's gain back", own, remote, gain: quieter, player)
 
         // OldTunes's own volume.
-        let deviceBefore = OutputDeviceVolume.read()
         player.setVolume(0.5)
         try? await Task.sleep(for: .milliseconds(300))
         await compare("the volume slider at 50% takes 6.02 dB more off what the route plays", own, remote,
                       decibels: SoundCheck.decibels(energy: quieter.soundCheckEnergy) + 20 * log10(0.5), player)
-        check("and leaves the Mac's volume alone", OutputDeviceVolume.read() == deviceBefore && player.state.volume == 0.5,
-              "device \(deviceBefore.map { f(Double($0)) } ?? "nil") → \(OutputDeviceVolume.read().map { f(Double($0)) } ?? "nil"), "
-              + "slider shows \(f(Double(player.state.volume)))")
+        check("and the slider shows it, enabled", player.state.volume == 0.5 && player.state.isVolumeEnabled,
+              "slider shows \(f(Double(player.state.volume))), \(player.state.isVolumeEnabled ? "enabled" : "greyed out")")
         player.setVolume(1)
 
         // As after a change of output device.
@@ -120,21 +122,34 @@ enum CloudRouteBench {
             await recordBoth(own, remote, seconds: 6, to: URL(fileURLWithPath: dir, isDirectory: true), suffix: "-louder")
         }
 
-        // No permission, simulated from the start of a song: the tap hears only zeros.
-        Log.info("ROUTE: System Audio Recording at launch: \(AudioCapturePermission.atLaunch); silence watch "
-                 + "\(player.cloud.route?.watchesForSilence == true ? "on" : "off") in the app's own setting")
-        player.cloud.route?.watchesForSilence = true
+        // A song that opens silent, simulated from its start: the tap hears only zeros, the probe
+        // its tone.
+        player.cloud.route?.simulatesSilentTap = true
+        player.play(queue: [quieter.id, louder.id], startAt: quieter.id)
+        guard await waitForSong(quieter, player) else { return }
+        _ = await AudioABBench.waitUntil(6) { player.cloud.route?.lastSilenceCheck != nil }
+        try? await Task.sleep(for: .milliseconds(300))
+        check("a song that opens silent stays routed: the probe still hears its tone",
+              player.cloud.route?.mode == .routing && player.cloud.route?.lastSilenceCheck == .granted && player.state.isVolumeEnabled,
+              "probe \(player.cloud.route?.lastSilenceCheck?.rawValue ?? "never ran") after \(f(player.cloud.position)) s of the song; "
+              + AudioABBench.routeStatus(player.cloud))
+        player.cloud.route?.simulatesSilentTap = false
+        try? await Task.sleep(for: .milliseconds(300))
+        await compare("and once the song is heard, it plays out times its gain", own, remote, gain: quieter, player)
+
+        // No permission, simulated from the start of a song: the tap and the probe hear only zeros.
         player.cloud.route?.simulatesMissingPermission = true
         player.play(queue: [quieter.id, louder.id], startAt: quieter.id)
         guard await waitForSong(quieter, player) else { return }
-        let gaveUp = await AudioABBench.waitUntil(4) { player.cloud.route?.mode == .listening }
-        check("without the permission (simulated) the route gives up and listens", gaveUp,
-              "after \(f(player.cloud.position)) s of the song; \(AudioABBench.routeStatus(player.cloud))")
+        let gaveUp = await AudioABBench.waitUntil(6) { player.cloud.route?.mode == .listening }
+        check("without the permission (simulated) the route gives up and listens", gaveUp && player.cloud.route?.lastSilenceCheck == .denied,
+              "probe \(player.cloud.route?.lastSilenceCheck?.rawValue ?? "never ran") after \(f(player.cloud.position)) s of the song; "
+              + AudioABBench.routeStatus(player.cloud))
         player.cloud.route?.simulatesMissingPermission = false
         try? await Task.sleep(for: .milliseconds(500))
         await directly("then the song plays straight from RemotePlayerService", own, remote, player)
-        check("and the slider moves the Mac's volume again, as it must without a route", !player.cloud.ownsVolume,
-              AudioABBench.routeStatus(player.cloud))
+        check("and the slider greys out, as it must without a route", !player.cloud.ownsVolume && !player.state.isVolumeEnabled,
+              "slider \(player.state.isVolumeEnabled ? "enabled" : "greyed out"); \(AudioABBench.routeStatus(player.cloud))")
         _ = await AudioABBench.waitUntil(3) { visualizer.tap.status.remotePlayerTapped }
         await visualizerTaps("and the visualizer's tap takes RemotePlayerService again", remotePlayer: true, visualizer, ring, me: me)
 
@@ -143,8 +158,9 @@ enum CloudRouteBench {
         guard await waitForSong(louder, player) else { return }
         player.seek(to: 40)
         try? await Task.sleep(for: .seconds(1))
-        check("having heard sound, the route routes the next song again", player.cloud.route?.mode == .routing,
-              AudioABBench.routeStatus(player.cloud))
+        check("having heard sound, the route routes the next song again, with the slider enabled",
+              player.cloud.route?.mode == .routing && player.state.isVolumeEnabled,
+              "slider \(player.state.isVolumeEnabled ? "enabled" : "greyed out"); \(AudioABBench.routeStatus(player.cloud))")
         await compare("and plays it out times its gain", own, remote, gain: louder, player)
         _ = await AudioABBench.waitUntil(3) { !visualizer.tap.status.remotePlayerTapped }
         await visualizerTaps("and the visualizer's tap leaves RemotePlayerService out again", remotePlayer: false, visualizer, ring, me: me)

@@ -73,8 +73,8 @@ The first time OldTunes plays a cloud song, macOS asks whether OldTunes may reco
 Allow it: cloud songs play in a separate Apple process, and OldTunes takes their sound from there
 so its volume slider and Sound Check can set their level, and so the visualizer can hear them.
 OldTunes listens only to its own songs and records or saves nothing. If you said no, cloud songs
-play at their own level, the volume slider moves the Mac's volume during them, and the visualizer
-says it can't hear the music; turn OldTunes on in System Settings ▸ Privacy & Security ▸ Screen &
+play at their own level, the volume slider is greyed out during them, and the visualizer says it
+can't hear the music; turn OldTunes on in System Settings ▸ Privacy & Security ▸ Screen &
 System Audio Recording, under System Audio Recording Only, then quit and reopen OldTunes.
 
 ## Build and run
@@ -153,7 +153,7 @@ runs on it.
 - **Cloud songs come out 25 ms late.** Apple's MusicKit has no volume control on macOS, so
   OldTunes takes each cloud song's sound from Apple's player process and plays it out itself at
   the right level. Without the System Audio Recording permission it can't: cloud songs then play
-  at their own level, and the volume slider moves the Mac's volume while one plays.
+  at their own level, and the volume slider is greyed out while one plays.
 - **Sound Check on files.** For a song with a file on this Mac, Sound Check can only make it
   louder as far as the volume slider leaves room (Music can go further).
 - **Media keys right as a cloud song starts.** For about 0.15 s after a cloud song starts,

@@ -3,7 +3,8 @@ import AppKit
 /// The volume slider under the transport buttons: a recessed groove, a round knob with a dimple,
 /// and a speaker glyph at each end (§7.2: groove x 39..116, y 73..78; knob 12 pt; glyphs x 26..38
 /// and 117..132). Click anywhere on the groove to jump there, then drag; clicking the small
-/// speaker mutes and the big one goes to full, as iTunes did.
+/// speaker mutes and the big one goes to full, as iTunes did. Disabled, it draws dimmed and
+/// ignores the mouse and the scroll wheel.
 @MainActor
 final class ChromeVolumeSlider: NSView {
     /// Called continuously while the user drags, 0...1.
@@ -11,6 +12,14 @@ final class ChromeVolumeSlider: NSView {
     var value: Float = 0.75 { didSet { if value != oldValue { needsDisplay = true } } }
     /// True between mouse-down and mouse-up; state-driven updates must not move the knob then.
     private(set) var isDragging = false
+    /// False during an iCloud song OldTunes can't set the level of (PlaybackState.isVolumeEnabled).
+    var isEnabled = true {
+        didSet {
+            guard isEnabled != oldValue else { return }
+            if !isEnabled { isDragging = false }
+            needsDisplay = true
+        }
+    }
 
     /// Window x of this view's left edge; everything below is relative to it.
     static let originX: CGFloat = 24
@@ -40,6 +49,7 @@ final class ChromeVolumeSlider: NSView {
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
         let p = convert(event.locationInWindow, from: nil)
         if p.x < grooveMinX - 1 {
             set(0)
@@ -59,6 +69,7 @@ final class ChromeVolumeSlider: NSView {
     override func mouseUp(with event: NSEvent) { isDragging = false }
 
     override func scrollWheel(with event: NSEvent) {
+        guard isEnabled else { return }
         let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 200 : event.scrollingDeltaY / 20
         guard delta != 0 else { return }
         set(min(max(value + Float(delta), 0), 1))
@@ -72,6 +83,16 @@ final class ChromeVolumeSlider: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        // Disabled, the slider fades as one piece, as a disabled bevel button does, so the groove
+        // doesn't show through the knob.
+        let ctx = NSGraphicsContext.current?.cgContext
+        ctx?.saveGState()
+        if !isEnabled { ctx?.setAlpha(0.55) }
+        ctx?.beginTransparencyLayer(auxiliaryInfo: nil)
+        defer {
+            ctx?.endTransparencyLayer()
+            ctx?.restoreGState()
+        }
         let h = Theme.Metrics.volumeGrooveHeight
         let groove = NSRect(x: grooveMinX, y: centerY - h / 2, width: grooveLength, height: h)
         ChromePalette.emboss.setFill()

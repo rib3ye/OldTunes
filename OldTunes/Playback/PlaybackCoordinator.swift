@@ -297,18 +297,15 @@ final class PlaybackCoordinator: PlaybackControlling {
         s.position = 0
         s.duration = 0
         s.nowPlaying = nil
+        s.isVolumeEnabled = true
         state = s
     }
 
     func setVolume(_ volume: Float) {
         let v = min(max(volume, 0), 1)
-        if (active ?? claimed) === cloud, !cloud.ownsVolume {
-            cloud.deviceVolume = v
-        } else {
-            appVolume = v
-            local.volume = v
-            cloud.volume = v
-        }
+        appVolume = v
+        local.volume = v
+        cloud.volume = v
         state.volume = v
     }
 
@@ -551,9 +548,8 @@ final class PlaybackCoordinator: PlaybackControlling {
         if transport.duration > 0 { s.duration = transport.duration }
         // MusicKit's playbackTime trails a seek by a tick.
         s.position = landed ?? transport.position
-        // The slider shows what it controls: OldTunes's own volume, or the Mac's for an iCloud
-        // song OldTunes can't set the level of.
-        s.volume = transport === cloud && !cloud.ownsVolume ? cloud.deviceVolume : appVolume
+        s.volume = appVolume
+        s.isVolumeEnabled = volumeApplies(to: transport)
         // Clears a reason left from an earlier song: only this start's skips are news.
         s.lastError = skips?.message
         state = s
@@ -716,6 +712,12 @@ final class PlaybackCoordinator: PlaybackControlling {
         }
     }
 
+    /// The slider greys out during an iCloud song OldTunes can't set the level of (no System Audio
+    /// Recording permission): moving it would change nothing anyone hears.
+    private func volumeApplies(to transport: any Transport) -> Bool {
+        transport !== cloud || cloud.ownsVolume
+    }
+
     // MARK: Clock
 
     private func tick() {
@@ -727,9 +729,8 @@ final class PlaybackCoordinator: PlaybackControlling {
         var next = state
         next.position = min(transport.position, state.duration > 0 ? state.duration : .infinity)
         next.isPlaying = transport.isPlaying || pendingResume === transport
-        if transport === cloud, !cloud.ownsVolume, ticks % 5 == 0 {
-            next.volume = cloud.deviceVolume
-        }
+        // An iCloud song's route can give up mid-song (its tap heard silence, and so did the probe).
+        next.isVolumeEnabled = volumeApplies(to: transport)
         if next != state {
             state = next
         } else if next.isPlaying {

@@ -71,10 +71,12 @@ final class ControlBarView: NSView {
     // MARK: - Public API
 
     /// Play/pause glyph, LCD lines, scrubber and volume knob. Position is ignored while the user
-    /// drags the scrubber, and volume while they drag the knob.
+    /// drags the scrubber, and volume while they drag the knob. The slider greys out when the
+    /// volume can't reach the song playing.
     func update(_ state: PlaybackState) {
         playButton.isPlaying = state.isPlaying
         lcd.update(state)
+        volumeSlider.isEnabled = state.isVolumeEnabled
         if !volumeSlider.isDragging { volumeSlider.value = min(max(state.volume, 0), 1) }
     }
 

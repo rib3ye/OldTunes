@@ -7,7 +7,7 @@ import os
 /// OldTunes's own volume and Sound Check for iCloud songs.
 ///
 /// MusicKit plays iCloud songs in Apple's RemotePlayerService process and gives OldTunes no volume
-/// for them (OutputDeviceVolume). So a Core Audio process tap takes that process's sound away from
+/// for them (RESEARCH.md row 5). So a Core Audio process tap takes that process's sound away from
 /// the speakers, and one IOProc on a private aggregate device plays it out again on the same output
 /// device, times the gain: the volume slider, times the song's Sound Check gain when Sound Check is
 /// on. The IOProc reads the tap and writes the speakers in the same callback, on the output device's
@@ -20,11 +20,12 @@ import os
 /// at its own level, rather than not at all.
 ///
 /// The tap needs "System Audio Recording Only". Without it a tap reads zeros and reports no error,
-/// which would leave the song silent. CloudTransport makes no route when the permission was denied
-/// before launch. When it wasn't granted yet either (the first tap a Mac sees asks, and waits for
-/// the answer, so taps are made off the main thread), a route that has heard nothing after its song
-/// has played for 1.5 s goes back to only listening, with RemotePlayerService unmuted, and routes
-/// again from the next song once it has heard sound.
+/// which would leave the song silent. CloudTransport makes no route when SystemAudioProbe found the
+/// permission off at the first iCloud song. And a route that has heard only silence after its song
+/// has played for 1.5 s runs the probe again: if the probe hears its tone, the song is just quiet
+/// and stays routed; if not, the route goes back to only listening, with RemotePlayerService
+/// unmuted, and routes again from the next song once it has heard sound. The first tap a Mac sees
+/// asks for the permission and waits for the answer, so taps are made off the main thread.
 ///
 /// Rebuilds itself when the default output device changes (headphones in or out), when its
 /// aggregate device dies, and after sleep.
@@ -43,16 +44,16 @@ final class CloudAudioRoute {
     /// What the song is played out at, as a factor: the volume slider times any Sound Check gain.
     /// A change ramps over one IO buffer.
     var gain: Float = 1 { didSet { io.setGain(gain) } }
-    /// Whether a tap that hears only silence is taken for a missing permission (watch(_:)). Off when
-    /// the permission was granted at launch: silence is then just silence, and a song that opens
-    /// with a few silent seconds must not be handed back to RemotePlayerService at its full level.
-    /// The harness turns it on to test the fallback.
-    var watchesForSilence = AudioCapturePermission.atLaunch != .granted
-    /// Harness only: the IOProc takes every tapped sample for silence, as it would without the
-    /// System Audio Recording permission.
-    var simulatesMissingPermission: Bool {
+    /// Harness only: the IOProc takes every tapped sample for silence, as for a song that opens
+    /// quietly. SystemAudioProbe still hears its tone.
+    var simulatesSilentTap: Bool {
         get { io.simulatesSilence }
         set { io.simulatesSilence = newValue }
+    }
+    /// Harness only: the IOProc and SystemAudioProbe both hear only silence, as without the System
+    /// Audio Recording permission.
+    var simulatesMissingPermission = false {
+        didSet { simulatesSilentTap = simulatesMissingPermission }
     }
     /// What the route is doing, for the harness.
     var isRunning: Bool { procID != nil && running }
@@ -64,7 +65,15 @@ final class CloudAudioRoute {
     /// doesn't count as listening.
     private var playedSinceStart: TimeInterval = 0
     private var lastPosition: TimeInterval?
-    private static let listenBeforeGivingUp: TimeInterval = 1.5
+    private static let listenBeforeChecking: TimeInterval = 1.5
+    /// Counts start()s, so a probe that answers after its song has ended doesn't speak for the next.
+    private var song = 0
+    /// True while SystemAudioProbe checks this song's silence.
+    private var checking = false
+    /// The probe heard its tone during this song: its silence is the song's own.
+    private var silenceIsQuiet = false
+    /// What the last silence check found, for the harness.
+    private(set) var lastSilenceCheck: SystemAudioProbe.Answer?
 
     private let io = RouteIO()
     private var tapID = HAL.unknown
@@ -118,6 +127,8 @@ final class CloudAudioRoute {
         }
         playedSinceStart = 0
         lastPosition = nil
+        song += 1
+        silenceIsQuiet = false
         guard wanted else { return }
         startIO()
     }
@@ -129,17 +140,37 @@ final class CloudAudioRoute {
     }
 
     /// CloudTransport's 10 Hz tick. A routing tap that has heard nothing while the song played on
-    /// for 1.5 s is taken for one without the permission: unmute and listen instead.
+    /// for 1.5 s may lack the permission, or the song may open quietly. SystemAudioProbe tells
+    /// which: the song stays routed if the probe hears its tone, and otherwise the route unmutes and
+    /// listens instead.
     func watch(playing: Bool, position: TimeInterval) {
         defer { lastPosition = position }
-        guard watchesForSilence, mode == .routing, running, playing, let last = lastPosition else { return }
+        guard mode == .routing, running, playing, !checking, !silenceIsQuiet, let last = lastPosition else { return }
         let step = position - last
         if step > 0, step < 0.5 { playedSinceStart += step }
-        guard playedSinceStart >= Self.listenBeforeGivingUp, !io.hasHeard else { return }
-        Log.error("cloud route: the tap heard only silence for \(String(format: "%.1f", playedSinceStart)) s of playing; "
-                  + "System Audio Recording may be off for OldTunes. iCloud songs play at their own level, with the volume slider on the Mac's volume, until the tap hears sound.")
-        mode = .listening
-        Task { await self.rebuild(.listening, reason: "no sound through the tap") }
+        guard playedSinceStart >= Self.listenBeforeChecking, !io.hasHeard else { return }
+        checking = true
+        let silent = String(format: "%.1f", playedSinceStart)
+        let thisSong = song
+        let simulated = simulatesMissingPermission
+        Task {
+            let answer = await SystemAudioProbe.run(simulatingMissingPermission: simulated)
+            checking = false
+            lastSilenceCheck = answer
+            // The song's own sound may have come through meanwhile, or the song may have ended.
+            guard mode == .routing, wanted, !io.hasHeard else { return }
+            if answer == .granted {
+                if thisSong == song { silenceIsQuiet = true }
+                Log.info("cloud route: the tap heard only silence for \(silent) s of playing, but System Audio Recording "
+                         + "is on (the probe heard its tone), so the song is just quiet; it stays routed")
+                return
+            }
+            Log.error("cloud route: the tap heard only silence for \(silent) s of playing, and so did the probe "
+                      + "(\(answer.rawValue)): System Audio Recording looks off for OldTunes. iCloud songs play at their own level, "
+                      + "with the volume slider greyed out, until the tap hears sound.")
+            mode = .listening
+            await rebuild(.listening, reason: "no sound through the tap")
+        }
     }
 
     /// Harness only: builds everything again, the way a change of default output device does.
@@ -489,37 +520,6 @@ final class RouteIO: Sendable {
     }
 }
 
-/// The "System Audio Recording Only" permission as TCC's private preflight call reports it, read the
-/// way AudioCap reads it: 0 granted, 1 denied, anything else not asked yet. There is no public API
-/// for it. nil when the call can't be found. TCC answers each process from a cache, so a prompt
-/// answered after the first call shows only in the next launch.
-enum AudioCapturePermission {
-    enum Answer: Sendable { case granted, denied, unknown }
-
-    /// The first answer this launch gets, which CloudTransport and CloudAudioRoute go by.
-    static let atLaunch: Answer = switch preflight() {
-    case 0?: .granted
-    case 1?: .denied
-    default: .unknown
-    }
-
-    static func preflight() -> Int32? {
-        guard let tcc = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW),
-              let symbol = dlsym(tcc, "TCCAccessPreflight") else { return nil }
-        typealias Preflight = @convention(c) (CFString, CFDictionary?) -> Int32
-        return unsafeBitCast(symbol, to: Preflight.self)("kTCCServiceAudioCapture" as CFString, nil)
-    }
-
-    static func describe(_ raw: Int32?) -> String {
-        switch raw {
-        case nil: "unreadable"
-        case 0?: "granted (0)"
-        case 1?: "denied (1)"
-        case let other?: "not asked yet (\(other))"
-        }
-    }
-}
-
 struct RouteFailure: Error, CustomStringConvertible {
     var description: String
     init(_ description: String) { self.description = description }
@@ -547,8 +547,8 @@ private func cloudRouteListener(_ object: AudioObjectID, _ count: UInt32,
     return noErr
 }
 
-/// The few HAL reads the route needs. Safe on any thread.
-private enum HAL {
+/// The few HAL reads the route and SystemAudioProbe need. Safe on any thread.
+enum HAL {
     static let system = AudioObjectID(kAudioObjectSystemObject)
     static let unknown = AudioObjectID(kAudioObjectUnknown)
     static let remotePlayerBundleID = "com.apple.MediaPlayer.RemotePlayerService"
@@ -603,6 +603,16 @@ private enum HAL {
 
     static func describe(_ process: AudioObjectID) -> String {
         "RemotePlayerService(\(read(process, kAudioProcessPropertyPID, pid_t(0)).map(String.init) ?? "?"))"
+    }
+
+    /// The audio process object of a process, once it has played something; unknown before.
+    static func processObject(_ pid: pid_t) -> AudioObjectID {
+        var where_ = address(kAudioHardwarePropertyTranslatePIDToProcessObject)
+        var qualifier = pid
+        var object = unknown
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = AudioObjectGetPropertyData(system, &where_, UInt32(MemoryLayout<pid_t>.size), &qualifier, &size, &object)
+        return status == noErr ? object : unknown
     }
 
     static func defaultOutputDevice() -> AudioObjectID? {

@@ -12,7 +12,8 @@ import os
 ///
 /// The tap is muted: while it exists, the tapped processes send nothing to the speakers. Reading it
 /// needs the "System Audio Recording Only" permission, and without it the tap hands over zeros and
-/// no error, so the run also logs the permission as TCC's private preflight call reports it.
+/// no error, so the run also logs the permission as SystemAudioProbe finds it, before and after.
+/// On a Mac that was never asked, that first probe makes macOS ask.
 @available(macOS 14.2, *)
 @MainActor
 enum AudioTapBench {
@@ -27,10 +28,9 @@ enum AudioTapBench {
             Log.error("TAP: needs one cloud song and one local file")
             return
         }
-        let permissionAtStart = AudioCapturePermission.preflight()
-        Log.info("TAP: OldTunes pid=\(me), permission \(AudioCapturePermission.describe(permissionAtStart)); "
+        let permissionAtStart = await SystemAudioProbe.run()
+        Log.info("TAP: OldTunes pid=\(me), permission \(permissionAtStart.rawValue); "
                  + "RemotePlayerService before any MusicKit playback: \(remotes().map(describe))")
-        askForPermissionIfNeeded(me, permissionAtStart)
 
         // Cloud. Prepared first, so the tap can exist (and mute) before the song makes a sound.
         let player = ApplicationMusicPlayer.shared
@@ -109,8 +109,7 @@ enum AudioTapBench {
         Log.info("TAP RESULT local, the file itself: \(fileLevels(file, from: localFrom, to: localTo))")
         Log.info("TAP RESULT first non-zero sample: cloud \(onset(cloudOnset, since: cloudAt)), local \(onset(localOnset, since: localAt)); "
                  + "\(tap.levels.startInfo); \(tap.setup)")
-        Log.info("TAP RESULT permission: \(AudioCapturePermission.describe(permissionAtStart)) at start, "
-                 + "\(AudioCapturePermission.describe(AudioCapturePermission.preflight())) at end")
+        Log.info("TAP RESULT permission: \(permissionAtStart.rawValue) at start, \(await SystemAudioProbe.run().rawValue) at end")
     }
 
     /// Logs one line a second for `seconds` and returns the sum of those windows.
@@ -124,17 +123,6 @@ enum AudioTapBench {
             Log.info("TAP \(label) +\(second) s: \(window.summary); \(status()); sending audio: \(AudioProcessProbe.processesRunningOutput())")
         }
         return total
-    }
-
-    /// Before any song plays: if macOS has not asked yet, a tap on OldTunes alone makes it ask now.
-    /// On macOS 27 building that tap blocks until the prompt is answered. The preflight answer is
-    /// cached inside the process, so re-reading it here would still say "not asked"; TCC's log has it.
-    static func askForPermissionIfNeeded(_ me: pid_t, _ current: Int32?) {
-        guard let current, current != 0, current != 1 else { return }
-        let asked = Date()
-        guard let tap = ProcessTap.start(ownObject(me), label: "OldTunes alone, to ask") else { return }
-        Log.info("TAP: the asking tap took \(f(Date().timeIntervalSince(asked))) s to build")
-        tap.stop()
     }
 
     static func remotes() -> [AudioProcessProbe.Client] {

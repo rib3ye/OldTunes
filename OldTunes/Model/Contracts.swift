@@ -235,6 +235,9 @@ struct PlaybackState: Sendable, Equatable {
     var repeatMode: RepeatMode = .off
     /// 0...1
     var volume: Float = 0.75
+    /// False during an iCloud song OldTunes can't set the level of (no System Audio Recording
+    /// permission). The volume slider greys out then.
+    var isVolumeEnabled = true
     /// User-facing reason the last track could not play, if any.
     var lastError: String?
 }
