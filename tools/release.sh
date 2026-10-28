@@ -35,7 +35,7 @@ identity="Developer ID Application: Noah Tsutsui ($team)"
 notary_profile="${OLDTUNES_NOTARY_PROFILE:-OldTunes-notary}"
 out=build/release
 
-for tool in xcodegen xcodebuild gh ditto; do
+for tool in xcodegen xcodebuild gh ditto unzip; do
   command -v "$tool" >/dev/null || { echo "$0: $tool not found (brew install xcodegen gh)" >&2; exit 1; }
 done
 # A shallow clone counts too few commits, and the build number would go backwards.
@@ -104,8 +104,13 @@ plist="$app/Contents/Info.plist"
 shown="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"))"
 [[ "$shown" == "$version ($build)" ]] || { echo "$0: the app says it is $shown, not $version ($build)" >&2; exit 1; }
 
-# ditto keeps the bundle's symlinks and signatures intact; plain zip can break them.
-ditto -c -k --keepParent "$app" "$zip"
+# ditto keeps the bundle's symlinks and signatures intact; plain zip can break them. It must leave
+# out extended attributes (the build stamps com.apple.provenance on every file): ditto stores them
+# as ._ files, which Archive Utility folds back in but other unzip tools write into the bundle as
+# real files. A ._ file in a framework breaks its seal, and Gatekeeper then says Apple "could not
+# verify" the app, notarized or not.
+zip_app() { rm -f "$zip"; ditto -c -k --norsrc --noextattr --noqtn --noacl --keepParent "$app" "$zip"; }
+zip_app
 
 notes="Built from $sha."
 if xcrun notarytool history --keychain-profile "$notary_profile" >/dev/null 2>&1; then
@@ -118,13 +123,20 @@ if xcrun notarytool history --keychain-profile "$notary_profile" >/dev/null 2>&1
   fi
   xcrun stapler staple -q "$app"
   spctl --assess --type execute -v "$app"
-  rm "$zip"
-  ditto -c -k --keepParent "$app" "$zip"
+  zip_app
   notes+=" Signed with Developer ID and notarized by Apple."
 else
   echo "warning: no notarytool profile \"$notary_profile\", so this release is not notarized" >&2
   notes+=" Not notarized yet, so macOS refuses to open it the first time. Then open System Settings ▸ Privacy & Security and click Open Anyway."
 fi
+
+# Unpack the zip with plain unzip, the strictest of the tools people use, and check the signature
+# again: what a download unpacks to must still verify, not only the app in the archive.
+unpacked="$out/unzipped"
+rm -rf "$unpacked"
+unzip -q "$zip" -d "$unpacked"
+codesign --verify --deep --strict "$unpacked/OldTunes.app" ||
+  { echo "$0: the app in $zip fails its signature check once unzipped" >&2; exit 1; }
 
 if (( dry_run )); then
   echo "dry run: would publish $tag (\"$title\") at $sha with $zip"
