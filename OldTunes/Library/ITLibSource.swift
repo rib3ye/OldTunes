@@ -142,7 +142,7 @@ actor ITLibSource {
         let album = item.album
         var r = SongRecord(origin: .musicLibrary)
         r.persistentID = Int64(bitPattern: item.persistentID.uint64Value)
-        r.storeItemID = (item.value(forProperty: ITLibKeys.storeItemID.value) as? NSNumber)?.int64Value ?? 0
+        r.storeItemID = (item.value(forProperty: ITLibKeys.storeItemID) as? NSNumber)?.int64Value ?? 0
 
         r.title = item.title
         r.artist = item.artist?.name ?? ""
@@ -247,7 +247,7 @@ private struct AlbumPIDCheck {
 
     init(_ item: ITLibMediaItem) {
         let typed = Int64(bitPattern: item.album.persistentID.uint64Value)
-        let keyed = (item.value(forProperty: ITLibKeys.albumPersistentID.value) as? NSNumber)
+        let keyed = (item.value(forProperty: ITLibKeys.albumPersistentID) as? NSNumber)
             .map { Int64(bitPattern: $0.uint64Value) } ?? 0
         value = keyed != 0 ? keyed : typed
         agrees = keyed == typed

@@ -130,10 +130,10 @@ final class LibraryHarnessBench {
         }
         check("index holds 15,900 rows", counts.0 == 15_900, "\(counts.0)")
         check("cloud_id stored for every song", counts.1 == 15_900, "\(counts.1)")
-        check("StoreItemID via dlsym key returns values (§0 says 6,742)", counts.2 == 6_742,
-              "\(counts.2) non-zero; key '\(ITLibKeys.storeItemID.value)' fromSymbol=\(ITLibKeys.storeItemID.fromSymbol)")
-        check("AlbumPersistentID via dlsym key returns values", counts.3 > 15_000,
-              "\(counts.3) non-zero; key '\(ITLibKeys.albumPersistentID.value)' fromSymbol=\(ITLibKeys.albumPersistentID.fromSymbol)")
+        check("StoreItemID key returns values (§0 says 6,742)", counts.2 == 6_742,
+              "\(counts.2) non-zero; key '\(ITLibKeys.storeItemID)'")
+        check("AlbumPersistentID key returns values", counts.3 > 15_000,
+              "\(counts.3) non-zero; key '\(ITLibKeys.albumPersistentID)'")
         Log.info("library harness: has_artwork=\(counts.4) (§0: 10,277), added_at unknown=\(counts.5) (§0: 52)")
         check(".libraryDidChange posted on the main thread after each commit",
               changePosts >= 2 && changePostsOffMain == 0, "posts=\(changePosts) offMain=\(changePostsOffMain)")

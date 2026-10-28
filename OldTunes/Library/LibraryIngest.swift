@@ -255,9 +255,9 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
                      "load=\(Self.ms(snapshot.loadSeconds)) rows=\(Self.ms(snapshot.rowsSeconds)) " +
                      "playlists=\(snapshot.playlists.count) (\(Self.ms(snapshot.playlistSeconds))) " +
                      "unchecked=\(snapshot.records.lazy.filter { !$0.isChecked }.count) " +
-                     "storeIDs=\(snapshot.nonZeroStoreIDs) [key \(ITLibKeys.storeItemID.value) dlsym=\(ITLibKeys.storeItemID.fromSymbol)] " +
+                     "storeIDs=\(snapshot.nonZeroStoreIDs) [key \(ITLibKeys.storeItemID)] " +
                      "albumPIDs=\(snapshot.nonZeroAlbumPIDs) agree=\(snapshot.albumPIDAgreement) " +
-                     "[key \(ITLibKeys.albumPersistentID.value) dlsym=\(ITLibKeys.albumPersistentID.fromSymbol)]")
+                     "[key \(ITLibKeys.albumPersistentID)]")
             Log.info("library: index write inserted=\(write.inserted) updated=\(write.updated) " +
                      "unchanged=\(write.unchanged) deleted=\(write.deleted) " +
                      "playlists rewritten=\(write.playlistsRewritten) (\(write.playlistItems) items) " +
