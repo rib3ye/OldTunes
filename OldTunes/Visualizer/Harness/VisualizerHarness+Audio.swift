@@ -8,9 +8,9 @@ import VisualizerCore
 ///   1. the AnalyserNode emulation and getFrame port against what Geiss HDR's own code returned in
 ///      Chrome (VisualizerFixtures+Analyser.swift, made by tools/analyser-fixtures.js),
 ///   2. the silence watchdog's decisions,
-///   3. live (macOS 14.2+): the tap on a cloud song and a local file, our RemotePlayerService picked by
-///      its responsible pid, the watchdog on a deaf tap, and 20 build/teardown cycles that must leave
-///      no taps or aggregate devices behind.
+///   3. live (macOS 14.2+): the tap on a cloud song and a local file, our RemotePlayerService picked as
+///      the one that started after OldTunes, the watchdog on a deaf tap, and 20 build/teardown cycles
+///      that must leave no taps or aggregate devices behind.
 /// The tap is muted unless OLDTUNES_VIS_AUDIBLE=1. Cloud plays stay out of the listening history.
 extension VisualizerHarness {
     static func audio(_ bench: VisualizerBench) async {
@@ -258,9 +258,11 @@ extension VisualizerHarness {
         let status = tap.status
         bench.check("tap builds", status.isRunning, status.failure ?? "\(status.tapped), \(status.format), \(Int(status.buildMilliseconds)) ms")
         let remotes = status.tapped.filter { $0.bundleID == AudioHAL.remotePlayerBundleID }
-        bench.check("our RemotePlayerService is tapped, picked by its responsible pid",
-                    !remotes.isEmpty && status.pickedByResponsiblePID && remotes.allSatisfy { AudioHAL.responsiblePID($0.pid) == me },
-                    "\(remotes.map { "\($0) serving \(AudioHAL.responsiblePID($0.pid).map(String.init) ?? "?")" })")
+        // Whether it is the right one shows below: the feed hears the cloud song only through ours.
+        let listed = AudioHAL.processes().filter { $0.bundleID == AudioHAL.remotePlayerBundleID }
+        bench.check("our RemotePlayerService is tapped, and none that was running before OldTunes started",
+                    !remotes.isEmpty && remotes.allSatisfy { AudioHAL.isOurRemotePlayer(pid: $0.pid) },
+                    "tapped \(remotes); listed: \(listed.map { "\($0) \(AudioHAL.isOurRemotePlayer(pid: $0.pid) ? "started after OldTunes" : "running before OldTunes started")" })")
 
         // Cloud. Only if the tap holds the RemotePlayerService: otherwise a muted bench would play out loud.
         let feed = AudioFeed(ring: ring)

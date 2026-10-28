@@ -577,28 +577,12 @@ enum HAL {
         return value.takeRetainedValue() as String
     }
 
-    /// The RemotePlayerService that plays this OldTunes's songs, told apart from other apps' by
-    /// the app macOS holds responsible for it (a private libSystem call, looked up at run time).
-    /// Without that call, only a lone instance counts as ours: muting another app's would be worse
-    /// than playing this song at its own level.
+    /// The RemotePlayerService that plays this OldTunes's songs: one that wasn't running when
+    /// OldTunes started (AudioHAL.ourRemotePlayers). Two such count as none, since one of them is
+    /// another app's: muting another app's would be worse than playing this song at its own level.
     static func ourRemotePlayer() -> AudioObjectID? {
-        var where_ = address(kAudioHardwarePropertyProcessObjectList)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(system, &where_, 0, nil, &size) == noErr, size > 0 else { return nil }
-        var objects = [AudioObjectID](repeating: unknown, count: Int(size) / MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(system, &where_, 0, nil, &size, &objects) == noErr else { return nil }
-        let remotes = objects.filter { readString($0, kAudioProcessPropertyBundleID) == remotePlayerBundleID }
-        guard let responsible = responsibilitySymbol else { return remotes.count == 1 ? remotes.first : nil }
-        typealias Responsible = @convention(c) (pid_t) -> pid_t
-        let me = ProcessInfo.processInfo.processIdentifier
-        return remotes.first { object in
-            guard let pid = read(object, kAudioProcessPropertyPID, pid_t(0)), pid > 0 else { return false }
-            return unsafeBitCast(responsible, to: Responsible.self)(pid) == me
-        }
-    }
-
-    private static var responsibilitySymbol: UnsafeMutableRawPointer? {
-        dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid")
+        let ours = AudioHAL.ourRemotePlayers(AudioHAL.processes())
+        return ours.count == 1 ? ours[0].object : nil
     }
 
     static func describe(_ process: AudioObjectID) -> String {

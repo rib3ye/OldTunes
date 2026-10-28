@@ -251,6 +251,8 @@ apps signed with the team's Apple Development certificate:
 - `responsibility_get_pid_responsible_for_pid` answers for other processes inside the sandbox
   (asked about this shell, it named the same app as an unsandboxed caller), `TCCAccessPreflight`
   answers, Core Audio's process list and its bundle IDs are readable, and `proc_pidpath` works.
+  OldTunes calls neither private one any more: `AudioHAL.ourRemotePlayers` tells its own
+  RemotePlayerService by which instances started after OldTunes did.
 - `open --stdout <file>` captures a sandboxed app's stdout, and temporary-exception
   `absolute-path` and `home-relative-path` entries work.
 - On macOS 27, walking into `~/Music/Music` raises the Media & Apple Music prompt, even for a

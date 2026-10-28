@@ -59,7 +59,7 @@ enum CloudRouteBench {
         }
         defer { own.stop() }
         guard await AudioABBench.toneCheck(own) else { return }
-        guard let remote = await tapRemotePlayer(quieter, ingest: ingest, me: me) else { return }
+        guard let remote = await tapRemotePlayer(quieter, ingest: ingest) else { return }
         defer { remote.stop() }
 
         let player = PlaybackCoordinator(library: index, cloud: ingest)
@@ -191,7 +191,7 @@ enum CloudRouteBench {
 
     /// Makes MusicKit start its RemotePlayerService by preparing the first song, then taps that
     /// service, muted, before anything has played.
-    private static func tapRemotePlayer(_ track: Track, ingest: LibraryIngest, me: pid_t) async -> ProcessTap? {
+    private static func tapRemotePlayer(_ track: Track, ingest: LibraryIngest) async -> ProcessTap? {
         guard let song = await ingest.cloudSong(for: track) else {
             Log.error("ROUTE: MusicKit can't find song \(track.id)")
             return nil
@@ -208,7 +208,7 @@ enum CloudRouteBench {
         }
         player.queue = []
         let remotes = AudioTapBench.remotes()
-        guard !remotes.isEmpty, let tap = ProcessTap.start(AudioTapBench.ours(remotes, me), label: "ROUTE RemotePlayerService") else {
+        guard !remotes.isEmpty, let tap = ProcessTap.start(AudioTapBench.ours(remotes), label: "ROUTE RemotePlayerService") else {
             Log.error("ROUTE: no tap on RemotePlayerService (\(remotes.map(AudioTapBench.describe)))")
             return nil
         }

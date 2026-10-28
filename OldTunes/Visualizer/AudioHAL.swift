@@ -1,7 +1,9 @@
 import CoreAudio
 import Foundation
+import os
 
-/// Small, synchronous reads of the Core Audio HAL, for the visualizer's tap. Safe on any thread.
+/// Small, synchronous reads of the Core Audio HAL, for the visualizer's tap and the cloud route.
+/// Safe on any thread.
 ///
 /// AudioTapBench and AudioProcessProbe have their own copies of some of this; they are harness code
 /// that other benches build on, so they are left as they are.
@@ -105,20 +107,32 @@ enum AudioHAL {
         return Int(raw.assumingMemoryBound(to: AudioBufferList.self).pointee.mNumberBuffers)
     }
 
-    /// Activity Monitor's "responsible process": the app macOS holds responsible for a helper such as
-    /// RemotePlayerService. Private libSystem call, looked up at run time; nil if it's gone.
-    static func responsiblePID(_ pid: pid_t) -> pid_t? {
-        guard let symbol = responsibilitySymbol else { return nil }
-        typealias Responsible = @convention(c) (pid_t) -> pid_t
-        let result = unsafeBitCast(symbol, to: Responsible.self)(pid)
-        return result > 0 ? result : nil
+    /// The RemotePlayerService instances that were running when this OldTunes started. They play for
+    /// someone else: another app, or an OldTunes that quit (its instance lingers for a few minutes).
+    /// No public call names the app an instance plays for, but MusicKit starts a new one for each
+    /// OldTunes at its first iCloud song, so the instances that appear after launch are ours. Nil
+    /// until noted.
+    private static let remotePlayersAtLaunch = OSAllocatedUnfairLock<Set<pid_t>?>(initialState: nil)
+
+    /// Notes the RemotePlayerService instances running now, as OldTunes starts and before it plays
+    /// anything. Returns them, for the log.
+    @discardableResult
+    static func noteRemotePlayersAtLaunch() -> [Process] {
+        let running = processes().filter { $0.bundleID == remotePlayerBundleID }
+        remotePlayersAtLaunch.withLock { $0 = Set(running.map(\.pid)) }
+        return running
     }
 
-    /// Whether the private call above exists on this macOS.
-    static var canTellResponsibleProcess: Bool { responsibilitySymbol != nil }
+    /// Whether a RemotePlayerService instance plays for this OldTunes: it wasn't running when
+    /// OldTunes started. Any instance is, if the launch wasn't noted.
+    static func isOurRemotePlayer(pid: pid_t) -> Bool {
+        !(remotePlayersAtLaunch.withLock { $0 }?.contains(pid) ?? false)
+    }
 
-    private static var responsibilitySymbol: UnsafeMutableRawPointer? {
-        dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid")
+    /// The RemotePlayerService instances in `listed` that play for this OldTunes. Usually one; two
+    /// or more when another app started one after OldTunes did, which can't be told apart.
+    static func ourRemotePlayers(_ listed: [Process]) -> [Process] {
+        listed.filter { $0.bundleID == remotePlayerBundleID && isOurRemotePlayer(pid: $0.pid) }
     }
 
     /// The four-character code in an OSStatus, when it has one, for log lines.

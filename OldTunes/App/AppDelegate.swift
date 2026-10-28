@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before anything plays: Apple's cloud players already running are someone else's, so the
+        // ones that start later are ours (AudioHAL.ourRemotePlayers).
+        let notOurs = AudioHAL.noteRemotePlayersAtLaunch()
         // Light, Dark (Graphite) or Match System, from Settings, before any window exists.
         AppearancePreference.applyAtLaunch()
         NSApp.mainMenu = MainMenu.make()
@@ -32,6 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?
             .keys.filter { $0.hasPrefix("OldTunes") }.count ?? 0
         Log.info("launch: \(sandboxed ? "sandboxed" : "not sandboxed"), home \(NSHomeDirectory()), \(settings) OldTunes settings")
+        if !notOurs.isEmpty {
+            Log.info("cloud: RemotePlayerService running before OldTunes started, so not ours: \(notOurs)")
+        }
         Task { @MainActor in
             switch harness {
             case "authcheck": await AuthCheck.run(); Log.flush(); NSApp.terminate(nil)

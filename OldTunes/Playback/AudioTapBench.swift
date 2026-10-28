@@ -47,7 +47,7 @@ enum AudioTapBench {
         }
         var found = remotes()
         Log.info("TAP: after prepareToPlay, RemotePlayerService: \(found.map(describe))")
-        var tap = found.isEmpty ? nil : ProcessTap.start(ours(found, me) + ownObject(me), label: "cloud + OldTunes")
+        var tap = found.isEmpty ? nil : ProcessTap.start(ours(found) + ownObject(me), label: "cloud + OldTunes")
         let cloudAt = mach_absolute_time()
         tap?.levels.arm(at: cloudAt)
         do {
@@ -65,7 +65,7 @@ enum AudioTapBench {
             }
             Log.info("TAP: RemotePlayerService \(found.isEmpty ? "still missing 5 s" : "appeared \(millis(mach_absolute_time(), since: cloudAt)) ms") "
                      + "after play(): \(found.map(describe))")
-            tap = found.isEmpty ? nil : ProcessTap.start(ours(found, me) + ownObject(me), label: "cloud + OldTunes")
+            tap = found.isEmpty ? nil : ProcessTap.start(ours(found) + ownObject(me), label: "cloud + OldTunes")
             tap?.levels.arm(at: cloudAt)
         }
         guard let tap else {
@@ -129,9 +129,9 @@ enum AudioTapBench {
         AudioProcessProbe.allProcesses().filter { $0.bundleID == remoteBundleID }
     }
 
-    /// The instances serving this OldTunes; all of them if that can't be told.
-    static func ours(_ found: [AudioProcessProbe.Client], _ me: pid_t) -> [AudioObjectID] {
-        let serving = found.filter { responsiblePID($0.pid) == me }
+    /// The instances that play for this OldTunes (AudioHAL.isOurRemotePlayer); all of them if none does.
+    static func ours(_ found: [AudioProcessProbe.Client]) -> [AudioObjectID] {
+        let serving = found.filter { AudioHAL.isOurRemotePlayer(pid: $0.pid) }
         return (serving.isEmpty ? found : serving).map(\.object)
     }
 
@@ -167,17 +167,10 @@ enum AudioTapBench {
         return [own.object]
     }
 
-    /// A RemotePlayerService instance, with the app macOS holds responsible for it (its client).
+    /// A RemotePlayerService instance, and whether it plays for this OldTunes.
     static func describe(_ c: AudioProcessProbe.Client) -> String {
-        "\(c) object \(c.object) \(c.isRunningOutput ? "sending audio" : "quiet"), serving pid \(responsiblePID(c.pid).map(String.init) ?? "?")"
-    }
-
-    /// Activity Monitor's "responsible process", through a private libSystem call. Harness-only.
-    static func responsiblePID(_ pid: pid_t) -> pid_t? {
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else { return nil }
-        typealias Responsible = @convention(c) (pid_t) -> pid_t
-        let result = unsafeBitCast(symbol, to: Responsible.self)(pid)
-        return result > 0 ? result : nil
+        "\(c) object \(c.object) \(c.isRunningOutput ? "sending audio" : "quiet"), "
+            + (AudioHAL.isOurRemotePlayer(pid: c.pid) ? "started after OldTunes" : "running before OldTunes started")
     }
 
     static func onset(_ onset: TapLevels.Onset?, since: UInt64) -> String {

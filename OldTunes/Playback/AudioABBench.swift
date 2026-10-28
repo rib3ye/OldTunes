@@ -154,7 +154,7 @@ enum AudioABBench {
         let remotes = AudioTapBench.remotes()
         Log.info("AB OldTunes: RemotePlayerService after prepareToPlay: \(remotes.map(AudioTapBench.describe))")
         guard !remotes.isEmpty,
-              let tap = ProcessTap.start(AudioTapBench.ours(remotes, me) + AudioTapBench.ownObject(me), label: "AB OldTunes") else {
+              let tap = ProcessTap.start(AudioTapBench.ours(remotes) + AudioTapBench.ownObject(me), label: "AB OldTunes") else {
             Log.error("AB OldTunes: no tap")
             player.queue = []
             return nil

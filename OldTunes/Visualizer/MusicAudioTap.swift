@@ -6,11 +6,9 @@ import VisualizerCore
 /// What the tap is doing, for the log, the silence watchdog and the bench.
 struct TapStatus: Sendable, Equatable {
     var isRunning = false
-    /// The processes the tap listens to: our own, plus our RemotePlayerService once MusicKit starts it.
+    /// The processes the tap listens to: our own, plus our RemotePlayerService once MusicKit starts it
+    /// (AudioHAL.ourRemotePlayers).
     var tapped: [AudioHAL.Process] = []
-    /// True when RemotePlayerService was matched to this OldTunes by its responsible pid; false when
-    /// that private call is missing and every instance is tapped.
-    var pickedByResponsiblePID = false
     var outputDevice = ""
     var outputIsAirPlay = false
     var format = ""
@@ -18,7 +16,7 @@ struct TapStatus: Sendable, Equatable {
     var failure: String?
     /// What the HAL showed when the tap was built, for the log: how many audio processes it listed,
     /// which of the tapped processes and Apple's players were running output, and each
-    /// RemotePlayerService left out with the pid it serves.
+    /// RemotePlayerService left out because it was running before OldTunes started.
     var seen = ""
 
     var remotePlayerTapped: Bool { tapped.contains { $0.bundleID == AudioHAL.remotePlayerBundleID } }
@@ -103,34 +101,28 @@ final class MusicAudioTap {
 
     // MARK: - Building
 
-    /// The processes to tap: ourselves, plus every RemotePlayerService this OldTunes is responsible for
-    /// unless `includingRemotePlayer` is false. `seen` describes the rest for the log (see `TapStatus.seen`).
-    nonisolated static func targets(includingRemotePlayer: Bool = true) -> (processes: [AudioHAL.Process], byResponsiblePID: Bool, seen: String) {
+    /// The processes to tap: ourselves, plus every RemotePlayerService that plays for this OldTunes
+    /// (AudioHAL.ourRemotePlayers) unless `includingRemotePlayer` is false. `seen` describes the rest
+    /// for the log (see `TapStatus.seen`).
+    nonisolated static func targets(includingRemotePlayer: Bool = true) -> (processes: [AudioHAL.Process], seen: String) {
         let me = ProcessInfo.processInfo.processIdentifier
         let listed = AudioHAL.processes()
         var chosen: [AudioHAL.Process] = []
         if let own = AudioHAL.processObject(pid: me) { chosen.append(AudioHAL.process(own)) }
         guard includingRemotePlayer else {
-            return (chosen, AudioHAL.canTellResponsibleProcess, "\(listed.count) audio processes listed; "
+            return (chosen, "\(listed.count) audio processes listed; "
                     + "RemotePlayerService left out: OldTunes plays its cloud songs out itself (CloudAudioRoute)")
         }
         let remotes = listed.filter { $0.bundleID == AudioHAL.remotePlayerBundleID }
+        let ours = AudioHAL.ourRemotePlayers(remotes)
         let playing = (chosen + remotes).filter(\.isRunningOutput).map(\.description)
         var seen = "\(listed.count) audio processes listed; running output: "
             + (playing.isEmpty ? "none of ours or Apple's players" : playing.joined(separator: ", "))
-        guard AudioHAL.canTellResponsibleProcess else { return (chosen + remotes, false, seen) }
-        var ours: [AudioHAL.Process] = []
-        var others: [String] = []
-        for remote in remotes {
-            let serves = AudioHAL.responsiblePID(remote.pid)
-            if serves == me {
-                ours.append(remote)
-            } else {
-                others.append("\(remote) serving \(serves.map { String($0) } ?? "an unknown pid")")
-            }
+        let others = remotes.filter { !ours.contains($0) }
+        if !others.isEmpty {
+            seen += "; running before OldTunes started, so not ours: " + others.map(\.description).joined(separator: ", ")
         }
-        if !others.isEmpty { seen += "; not ours: " + others.joined(separator: ", ") }
-        return (chosen + ours, true, seen)
+        return (chosen + ours, seen)
     }
 
     private func build(reason: String) async {
@@ -198,7 +190,7 @@ final class MusicAudioTap {
         }
         listen(to: aggregate, kAudioDevicePropertyDeviceIsAlive)
 
-        status = TapStatus(isRunning: true, tapped: targets.processes, pickedByResponsiblePID: targets.byResponsiblePID,
+        status = TapStatus(isRunning: true, tapped: targets.processes,
                            outputDevice: AudioHAL.name(output) ?? outputUID, outputIsAirPlay: AudioHAL.isAirPlay(output),
                            format: Self.describe(format, rate: rate, tapBuffer: tapBuffer),
                            buildMilliseconds: HostClock.seconds(HostClock.now - began) * 1000, failure: nil,
@@ -274,7 +266,7 @@ final class MusicAudioTap {
         if let failure = status.failure {
             Log.error("visualizer: tap \(reason): \(failure)")
         } else if status.isRunning {
-            Log.info("visualizer: tap \(reason): \(status.tapped) \(status.pickedByResponsiblePID ? "" : "(every RemotePlayerService: responsible pid unavailable) ")"
+            Log.info("visualizer: tap \(reason): \(status.tapped) "
                      + "on \(status.outputDevice)\(status.outputIsAirPlay ? " (AirPlay)" : ""), \(status.format), "
                      + "\(muted ? "muted, " : "")built in \(String(format: "%.0f", status.buildMilliseconds)) ms; \(status.seen)")
         } else {
