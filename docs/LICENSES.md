@@ -58,14 +58,14 @@ Package paths are inside the package's checkout, which a build puts in
 | MonkeysAudio.txt | 1537 | `8cb551f3dbe81085540a95c673400fbe2fe335b2f61f3d4ae4c778f6b0a8fd18` | CXXMonkeysAudio 12.13.0 `LICENSE.txt`, verbatim |
 | DUMB.txt | 4684 | `8ab37725c26659c9042ced0786904e663c4268a5af3b3f51a1610646444085e0` | CDUMB 2.0.3 `LICENSE.txt`, verbatim |
 | Speex.txt | 1773 | `2654a4264b2bfe298dedc508748d140111840c315cc8eb646a3a68c13fa75b01` | CSpeex 1.2.1 `LICENSE.txt`, verbatim |
-| FLAC.txt | 1509 | `12600ea1a7affcbf469bd0d8b2cd725e4167114a2ee834b88f5d2857bfd7ddbf` | flac-binary-xcframework 0.2.0 `LICENSE.txt`, verbatim |
+| FLAC.txt | 1509 | `7866ee98760fc1f0156b4fe6bf530257e02be487ab3fd94e2b63799dd32d6b2c` | AudioXCFrameworks `03caaf2` `flac/flac-src/COPYING.Xiph` (FLAC 1.5.0's own), verbatim. The package's `LICENSE.txt` is older: it says 2011–2023 where FLAC 1.5.0 says 2011–2025 |
 | Ogg.txt | 1466 | `d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814` | ogg-binary-xcframework 0.1.3 `LICENSE.txt`, verbatim |
 | Vorbis.txt | 1470 | `ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a` | vorbis-binary-xcframework 0.1.2 `LICENSE.txt`, verbatim |
 | Opus.txt | 1945 | `01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551` | opus-binary-xcframework 0.3.0 `LICENSE.txt` (libopus only), verbatim |
 | Opusfile.txt | 1487 | `0267ae795ab744c4e0f9c45e249440fdf2e75dac8c804f36066b28649bf74aaf` | AudioXCFrameworks `03caaf2` `opus/opusfile-src/COPYING`, verbatim |
 | libopusenc.txt | 1522 | `93b17ab56b8230127fea532be0dcb4e6d71e66ab5e8ce5d6ae8785d7288b164f` | AudioXCFrameworks `03caaf2` `opus/libopusenc-src/COPYING`, verbatim |
 | WavPack.txt | 1561 | `1703dd391c9b422910287add8483a27d9bead0b0b5ccd6d5017e995a7192b3e2` | wavpack-binary-xcframework 0.2.0 `LICENSE.txt`, verbatim |
-| Musepack.txt | 1515 | `907b528fbade73703759f19a8e78cd6ca64605c95a99b3bbea0edcedbba701fa` | mpc-binary-xcframework 0.1.2 `LICENSE-BSD.txt`, verbatim |
+| Musepack.txt | 1563 | `141f551d8e4f037b7f6bc9136b7d3116c7ae9ec8da10c4f14c07c6dc34bc9aa5` | AudioXCFrameworks `03caaf2` `mpc/musepack-src/libmpcdec/COPYING`, verbatim. The package's `LICENSE-BSD.txt` rewords it into GitHub's BSD template |
 | Musepack-encoder.txt | 26525 | `814cf1a7e79dc6a3eda3d197fa7ded36c3b733917ed5da1e8cc135eb24f3ac09` | mpc-binary-xcframework 0.1.2 `LICENSE-LGPL.txt`, verbatim |
 | LAME.txt | 25284 | `bfe4a52dc4645385f356a8e83cc54216a293e3b6f1cb4f79f5fc0277abf937fd` | lame-binary-xcframework 0.1.2 `LICENSE.txt`, verbatim |
 | mpg123.txt | 40718 | `c22482728a634a8dfdb4ff72a96d4c1ed64cd8f3e79335c401751ac591609366` | mpg123-binary-xcframework 0.3.1 `LICENSE.txt` (mpg123's `COPYING`), verbatim |
@@ -82,10 +82,29 @@ Package paths are inside the package's checkout, which a build puts in
    version.
 2. For each new or changed package, read its licence file in the checkout and copy it over the
    matching file in `OldTunes/App/Licenses/`. A binary framework's release name says which
-   upstream version is inside.
+   upstream version is inside. Compare a binary package's licence with the one in the source it
+   was built from (AudioXCFrameworks): FLAC's and Musepack's package copies didn't match.
 3. Update the versions and copyright lines in `Credits.html`, and the tables here.
 4. Check a Release build: `Contents/Resources/Licenses` holds the files, and the About box shows
    the credits.
+
+## Checked (2026-10-28)
+
+- Each file matches its source above byte for byte.
+- The standard licences are the real texts. `Apache-2.0.txt` and `TagLib.txt` (MPL 1.1) are
+  byte-identical to Homebrew's copies in caddy and cairo, and `GPL-3.0.txt` to nine Homebrew
+  packages'. The LGPL texts (LAME, libsndfile, Musepack encoder, TTA, and both licences inside
+  `mpg123.txt`) match Homebrew copies word for word, apart from the FSF's old postal address and
+  the optional "How to Apply These Terms" appendix that mpg123 leaves out.
+- The prebuilt frameworks' licences match the source they were built from. Ogg's and Opus's also
+  match Homebrew's copies of the same releases, and mpg123's matches Homebrew's 1.33.7. Speex and DUMB match their upstream releases
+  (Speex and SpeexDSP 1.2.1 on gitlab.xiph.org, kode54/dumb 2.0.3).
+- Versions come from `Package.resolved`, and for the binary frameworks from `configure.ac` in
+  the exact source or the binary's own version string. Two quirks: DUMB 2.0.3's `dumb.h` still
+  says 2.0.2, and opus.framework's libopusenc reports "1.6.1" because the framework is built
+  with one `config.h`; its source is libopusenc 0.3.
+- Every link in the About box opens. sourceforge.net refuses scripted visits to the TTA project
+  page, but its files page loads: "TTA Lossless Audio Codec", libtta 2.3.
 
 ## Rules
 
