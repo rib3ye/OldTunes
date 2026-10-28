@@ -1,4 +1,5 @@
 import AppKit
+import GRDB
 import iTunesLibrary
 
 /// OLDTUNES_HARNESS=musictag — the live check of saving a tag through Music.app, run only with
@@ -7,7 +8,10 @@ import iTunesLibrary
 /// re-reading Music's own database through iTunesLibrary (independent of the write path), then
 /// writes the original back and proves that too.
 ///
-///   OLDTUNES_TAG_ID=<index row id>  OLDTUNES_TAG_EXPECT_PID=<persistent id, Int64>  (a safety match)
+///   OLDTUNES_TAG_EXPECT_PID=<persistent id, Int64>  the song
+///   OLDTUNES_TAG_ID=<index row id>                  optional, a safety match
+/// Without a row id the song is found in the index by its persistent ID: a sandboxed OldTunes's
+/// own index is in its container, where nothing outside the app can look up a row id.
 @MainActor
 enum MusicTagLiveTest {
     static let marker = "oldtunes-test"
@@ -15,14 +19,21 @@ enum MusicTagLiveTest {
     static func run() async {
         let env = ProcessInfo.processInfo.environment
         defer { Log.flush(); NSApp.terminate(nil) }
-        guard let id = env["OLDTUNES_TAG_ID"].flatMap(Int64.init),
-              let expected = env["OLDTUNES_TAG_EXPECT_PID"].flatMap(Int64.init) else {
-            Log.error("musictag: set OLDTUNES_TAG_ID and OLDTUNES_TAG_EXPECT_PID"); return
+        guard let expected = env["OLDTUNES_TAG_EXPECT_PID"].flatMap(Int64.init) else {
+            Log.error("musictag: set OLDTUNES_TAG_EXPECT_PID (and optionally OLDTUNES_TAG_ID)"); return
         }
-        guard let index = try? LibraryIndex(),
-              let track = try? await index.tracks(ids: [id]).first,
+        guard let index = try? LibraryIndex() else {
+            Log.error("musictag: the index won't open; nothing written"); return
+        }
+        var rowID = env["OLDTUNES_TAG_ID"].flatMap(Int64.init)
+        if rowID == nil {
+            rowID = try? await index.pool.read { db in
+                try Int64.fetchOne(db, sql: "SELECT id FROM song WHERE persistent_id = ?", arguments: [expected])
+            }
+        }
+        guard let id = rowID, let track = try? await index.tracks(ids: [id]).first,
               track.persistentID == expected, track.origin == .musicLibrary else {
-            Log.error("musictag: row \(id) is missing or is not the expected Music-library song; nothing written"); return
+            Log.error("musictag: no row is the expected Music-library song \(expected); nothing written"); return
         }
         let original = track.comments
         Log.info("musictag: song “\(track.title)” by \(track.artist) — row \(id), pid \(expected), " +

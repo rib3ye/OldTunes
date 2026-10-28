@@ -1,10 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OldTunes runs in the App Sandbox, which the Mac App Store requires. Each key after the first lets
+  it do one thing the sandbox would otherwise refuse (RESEARCH.md §3.1, §3.3). Debug builds sign
+  with OldTunes-Debug.entitlements, which tools/debug-entitlements.sh makes from this file.
+-->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<false/>
+	<true/>
+	<!-- MusicKit: streaming iCloud songs, and catalog lookups. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- ~/Music: the Music library's own song files, which OldTunes plays but never writes. -->
+	<key>com.apple.security.assets.music.read-only</key>
+	<true/>
+	<!-- Folders chosen in Add Folder, read-write because Get Info saves their songs' tags, and kept
+	     across launches as security-scoped bookmarks (FolderAccess). -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<!-- Apple Events to Music: saving tags, Also add to the Music app, and the playlist commands.
+	     The hardened runtime asks for the first key. The sandbox lets the events reach only the
+	     access groups listed in the second, and Music's dictionary puts every one of them in
+	     library.read-write. -->
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<key>com.apple.security.scripting-targets</key>
+	<dict>
+		<key>com.apple.Music</key>
+		<array>
+			<string>com.apple.Music.library.read-write</string>
+		</array>
+	</dict>
 </dict>
 </plist>

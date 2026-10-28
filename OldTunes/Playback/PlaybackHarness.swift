@@ -211,6 +211,8 @@ private final class Bench {
     let noSource: Track, missingFile: Track
     /// A file that exists but is not audio: with no cloud song, and with c4's cloud song.
     let corruptOnly: Track, corruptWithCloud: Track
+    /// Why the not-audio file couldn't be written, if it couldn't.
+    let fixtureProblem: String?
 
     init(_ loaded: PlaybackHarnessLibrary.Loaded) {
         self.loaded = loaded
@@ -233,7 +235,14 @@ private final class Bench {
         let fixtures = ProcessInfo.processInfo.environment["OLDTUNES_PLAYBACK_FIXTURES"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.temporaryDirectory
         let broken = fixtures.appendingPathComponent("broken-not-audio.m4a")
-        try? Data(repeating: 0x5A, count: 64 * 1024).write(to: broken)
+        // Without the file, the corrupt-file checks would test a missing file instead (as in a
+        // sandboxed build without the bench exception), so a failed write fails the bench.
+        do {
+            try Data(repeating: 0x5A, count: 64 * 1024).write(to: broken)
+            fixtureProblem = nil
+        } catch {
+            fixtureProblem = "\(broken.path): \(error.localizedDescription)"
+        }
         var c = Track.blank(id: -3)
         c.title = "Harness: corrupt file, no cloud song"
         c.fileURL = broken
@@ -579,10 +588,14 @@ private final class Bench {
         check("lastError explains the skip", player.state.lastError != nil, "lastError=\(player.state.lastError ?? "nil")")
 
         // Fallback chain step 1 → 2: a file that exists but will not decode falls back to iCloud.
+        check("the not-audio fixture was written", fixtureProblem == nil, fixtureProblem ?? "")
         recorder.reset()
         player.play(queue: [corruptOnly.id, corruptWithCloud.id], startAt: nil)
         let fellBack = await waitUntil(20) { self.playing(self.corruptWithCloud) }
-        check("an undecodable file with no cloud song is skipped", fellBack && (player.state.lastError ?? "").contains("corrupt file, no cloud"),
+        // The decode failure's own reason: a missing or a shut file would name something else.
+        let reason = player.state.lastError ?? ""
+        check("an undecodable file with no cloud song is skipped",
+              fellBack && reason.contains("corrupt file, no cloud") && reason.contains("its file could not be opened"),
               "lastError=\(player.state.lastError ?? "nil")")
         check("an undecodable file that is also in iCloud streams from iCloud instead",
               fellBack && player.cloud.isPlaying && !player.local.isPlaying && recorder.loadingChanges.contains(true), stateLine())

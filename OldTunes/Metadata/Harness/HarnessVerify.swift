@@ -104,6 +104,10 @@ enum HarnessVerify {
                     "SB -1743 maps to the where-to-enable reason")
         tally.check(MusicScriptingSession.describe(sbError(-1712), what: "Save").contains("didn’t answer in time"),
                     "SB timeout maps to a retry message")
+        // What Music answers a sandboxed app outside its access groups: no setting fixes it.
+        let refused = MusicScriptingSession.describe(sbError(-10004), what: "x")
+        tally.check(refused == "x: Music refused this request (error -10004)." && refused != MusicAutomation.deniedReason,
+                    "SB -10004 says Music refused, not where to turn anything on", detail: refused)
         let other = MusicScriptingSession.describe(sbError(-10003), what: "Music didn’t accept the change to year")
         tally.check(other.contains("Music got an error.") && other.contains("-10003"),
                     "other SB errors keep Music's text and number", detail: other)

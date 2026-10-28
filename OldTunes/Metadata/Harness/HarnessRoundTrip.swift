@@ -33,7 +33,10 @@ enum HarnessRoundTrip {
         var names = [CChar](repeating: 0, count: size)
         guard listxattr(path, &names, size, 0) == size else { return out }
         let all = names.split(separator: 0).map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
-        for name in all {
+        // Left out: macOS stamps com.apple.quarantine, with the time in it, on every file a
+        // sandboxed app makes, the safe write's copy included, and the app may not change it
+        // (RESEARCH.md §3.1). Nothing reads it on an audio file.
+        for name in all where name != "com.apple.quarantine" {
             let len = getxattr(path, name, nil, 0, 0, 0)
             guard len >= 0 else { continue }
             var buf = [UInt8](repeating: 0, count: len)

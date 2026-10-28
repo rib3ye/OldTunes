@@ -19,6 +19,7 @@ reviewing OldTunes; the code follows these, not the original text.
 | 2, 8.5 | Library changes arrive as `ITLibraryDidChangeNotification` | The distributed notification that fires is `com.apple.AMPLibraryAgent.libraryChanged`. |
 | 2 | Join MusicKit to iTunesLibrary on the persistent id | `Song.id` is a library id like `i.AbCdEfGhIjK`. The join key is `musicKit_persistentID` inside `playParameters`' JSON, equal to `Int64(bitPattern:)` of the ITLib persistent id (15,900/15,900). |
 | 3.2 | `NSAppleEventsUsageDescription` says Music saves tag changes for songs with no file on this Mac | October 20, 2026: it now reads "OldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, and to make, rename and delete the playlists you change in OldTunes." Tag saves go through Music for every Music-library song (the 6.5, 6.6 row), Add Folder can now add songs (§6.7), and the source list changes playlists (§6.8). `project.yml` generates the plist. |
+| 3.1, 3.3 | Non-sandboxed; entitlements are `app-sandbox` false and `automation.apple-events` | October 28, 2026: sandboxed, for the Mac App Store. §3.1 and §3.3 are rewritten; the old reason (tag writes anywhere) is answered by bookmarks for added folders. |
 | 3.6, 5.6 | Wrap MusicKit calls in a task-group timeout | A task group waits for every child, so a hung body still hangs the caller (0.3 s timeout returned after 2.1 s). `Support/Timeout.swift` races a continuation instead and abandons the body. |
 | 5.3, 10-R3 | Cloud end-of-track: status leaves `.playing` while position ≥ duration − 1 | Never fires. Observed: `playbackTime` resets to 0.00 and status goes `.playing` → `.paused` in the same 100 ms tick, `currentEntry` still set. |
 | 5 | Volume slider | MusicKit has no volume on macOS. Since October 20, 2026 every cloud song plays out through `CloudAudioRoute` (next row), so the slider is OldTunes's own volume for files and cloud songs alike, kept between launches (`OldTunes.volume`). Only without the System Audio Recording permission is there no route; the slider is then greyed out during cloud songs. Until October 28, 2026 it drove the default output device's volume instead, and the permission came from TCC's private `TCCAccessPreflight` (dlopen of TCC.framework), which App Review rejects under Guideline 2.5.1. Apple has no public call for this permission (developer.apple.com/forums/thread/756783) and no supported way to set `ApplicationMusicPlayer`'s volume on macOS (DTS, developer.apple.com/forums/thread/850232). So `SystemAudioProbe` tests it with public API only: at the first iCloud song of a launch, alongside `prepareToPlay`, OldTunes plays a 660 Hz tone at −60 dBFS for 200 ms through an `AVAudioEngine` of its own while a muted process tap on its own process listens; any non-zero sample means the permission is on (measured October 28, 2026: heard 23–31 ms after the tone starts, 85–170 ms in all; on a build macOS had never asked about, the probe's tap waited 3.6 s for the prompt to be answered, then heard the tone). A developer reports that writing `kAudioTapPropertyDescription` back to a tap fails with `kAudioDevicePermissionsError` ('hog!') without the permission; Apple hasn't confirmed it. With the permission on it returned noErr in 0–6 ms (`PermissionBench`); the permission-off side can't be checked without changing TCC. So the probe takes a 'hog!' only as a quicker "denied", and every other answer goes on to the tone, which can never mistake a missing permission for a granted one. |
@@ -78,7 +79,7 @@ Resolve a row to something playable in this order. The condition is evaluated pe
 
 | Step | Condition to enter | Mechanism | If it fails |
 |---|---|---|---|
-| **1. Local file** | `song.fileURL != nil` **and** `FileManager.default.fileExists(atPath:)` | `AVQueuePlayer` with `AVPlayerItem(asset: AVURLAsset(url:))` | Go to step 2. Mark the row MISSING in the index. |
+| **1. Local file** | `song.fileURL != nil` **and** `FileManager.default.fileExists(atPath:)` **and** the file opens (`PlaybackCoordinator.isShut`; in the sandbox a file can exist and stay shut, §3.1) | `AVQueuePlayer` with `AVPlayerItem(asset: AVURLAsset(url:))` | Go to step 2. Mark the row MISSING in the index. A shut file goes to step 2 with `shutReason`, which says to add its folder. |
 | **2. MusicKit library item** | `cloudSongs[persistentID] != nil` (the in-memory `[Int64: Song]` map built from `MusicLibraryRequest<Song>`) | `ApplicationMusicPlayer.shared` as above | Go to step 3. |
 | **3. MusicKit catalog item** | `store_item_id != 0` **and** `MusicSubscription.current.canPlayCatalogContent == true` | `MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(String(storeItemID)))`, then queue the returned Song | Go to step 4. |
 | **4. Unplayable** | everything above failed | Do not play. Advance the queue. Draw the row dimmed (`#999999`) with a slashed-cloud badge, and put the reason in Get Info. | — |
@@ -156,7 +157,7 @@ Read `MusicSubscription.current` once at launch, behind a timeout (see §5.6 —
 
 **MusicKitSource.** The *playability* authority. One `MusicLibraryRequest<Song>` with `limit` set above the library size returns everything (verified: `limit = 16000` → 15,900 items; `limit = 25000` → 15,900; there is no 10,000 ceiling). Each `Song` carries the `playParameters` that `ApplicationMusicPlayer` consumes. `Song` is `Sendable`, so the map crosses actor boundaries freely. Never call `includeOnlyDownloadedContent = true` as a "downloaded" filter — it changes which items come back, not just how many (it returns 12 items, 7 of which are podcast episodes absent from the default song set).
 
-**LibraryIndex.** GRDB `DatabasePool` over `~/Library/Application Support/OldTunes/index.sqlite`. It exists for three jobs: as-you-type search, the four sorts, and surviving relaunch so the window shows rows before ingest finishes. It is a `final class … : Sendable` holding the pool rather than an `actor`, because `DatabasePool` is already concurrency-correct and gives parallel reads; an actor would serialize them for no benefit. Fallback: if Swift 6 complains about the `Sendable` conformance, wrap it in an `actor` and accept serialized reads — every measured query is under 8 ms, so it does not matter.
+**LibraryIndex.** GRDB `DatabasePool` over `~/Library/Application Support/OldTunes/index.sqlite` inside the sandbox container (`~/Library/Containers/com.noahtsutsui.oldtunes/Data/…`, §3.1); `OLDTUNES_DB_PATH` points it elsewhere. It exists for three jobs: as-you-type search, the four sorts, and surviving relaunch so the window shows rows before ingest finishes. It is a `final class … : Sendable` holding the pool rather than an `actor`, because `DatabasePool` is already concurrency-correct and gives parallel reads; an actor would serialize them for no benefit. Fallback: if Swift 6 complains about the `Sendable` conformance, wrap it in an `actor` and accept serialized reads — every measured query is under 8 ms, so it does not matter.
 
 **PlaybackCoordinator (@MainActor).** Owns the queue as `[Int64]` of song ids plus a cursor, owns the shuffle permutation, and owns both transports. It decides per track which transport to use by running the §1 fallback chain, pauses the other transport before starting one, and is the single place that knows what "now playing" means. MusicKit's own `shuffleMode` and `repeatMode` are forced off so the cloud player can never advance behind its back.
 
@@ -168,15 +169,132 @@ Read `MusicSubscription.current` once at launch, behind a timeout (see §5.6 —
 
 ## 3. Project configuration
 
-### 3.1 Sandbox decision: **non-sandboxed, hardened runtime, Developer ID.**
+### 3.1 Sandbox decision: **sandboxed, hardened runtime, Developer ID** (October 28, 2026)
 
-Both frameworks work sandboxed — `/System/Library/Sandbox/Profiles/frameworks.sb` lines 324–341 auto-grant `mach-lookup` to `com.apple.amp.library.framework` and `com.apple.amp.artworkd` to any app that merely links iTunesLibrary or MusicKit, and `com.apple.security.assets.music.read-only` grants recursive read of `~/Music`. Sandboxing is *possible*. We are not doing it, for one reason that actually bites:
+OldTunes runs in the App Sandbox, which the Mac App Store requires (App Review Guideline
+2.4.5(i)). Until October 27, 2026 it was a non-sandboxed Developer ID app, for one reason: tag
+writes reach song files anywhere, not just in `~/Music`. Added folders now keep a
+security-scoped bookmark each, which answers that. Developer ID builds are sandboxed too, so
+there is one app to test.
 
-**Tag writing needs write access to arbitrary file locations.** Songs outside `~/Music` (an external drive, a custom folder) are not covered by the music-assets entitlement at all; each one needs a user-selected open-panel grant and a persisted security-scoped bookmark, and symlinked or aliased library folders on other volumes have historically failed with `OSStatus -54`. This is a personal Developer-ID app, not a Mac App Store submission, so there is no review requirement to sandbox.
+What each part of OldTunes needs inside the sandbox (the keys are in §3.3):
 
-Two arguments *against* sandboxing that the research raised do **not** hold and should not be repeated: Music.app's sdef does declare access groups (92 of them; `track` at line 410 carries `com.apple.Music.library.read-write`), so a sandboxed app could script it through `com.apple.security.scripting-targets` without a temporary exception. And `com.apple.security.assets.music.read-only` does cover the real media tree. Sandboxing stays off because of the file-write reach, nothing else.
+- **iTunesLibrary and MusicKit:** no entitlement of their own. `frameworks.sb` (lines 321–341)
+  grants `mach-lookup` to `com.apple.amp.library.framework`, `com.apple.amp.artworkd` and the
+  MPMusicPlayer services to any app that links those frameworks. The Media & Apple Music
+  permission is asked for as before. `network.client` covers MusicKit's requests from inside the
+  app (catalog lookups, the subscription).
+- **Files in `~/Music`:** `assets.music.read-only`. Its rule (`application.sb` 169–262) opens all
+  of `~/Music`, except that inside the old iTunes media roots only their `Music` subfolders open.
+  OldTunes reads these files and never writes them: a Music-library song's tags are saved
+  through Music (§6.5).
+- **Added folders:** `files.user-selected.read-write` and `files.bookmarks.app-scope`.
+  `FolderAccess` keeps a security-scoped bookmark for each folder (`OldTunes.folderBookmarks`,
+  keyed by the path in `OldTunes.folderRoots`) and opens them all at launch, before the first
+  ingest: one `startAccessingSecurityScopedResource` per folder, held for the whole run. A
+  folder bookmark opens everything under it. Read-write, because the safe write (§6.4) makes a
+  temp file beside the song and swaps it in.
+- **Apple Events to Music:** `scripting-targets` = `{com.apple.Music: [com.apple.Music.library.read-write]}`
+  plus `automation.apple-events`. The hardened runtime needs the second, the sandbox the first,
+  and the Automation permission still applies (-1743 still means it is off). Music's sdef puts
+  every event OldTunes sends in `library.read-write`: the `track`, `playlist`, `source`,
+  `artwork` and `item` classes and the `add` command. `count`, `delete`, `duplicate`, `make` and
+  `move` are Standard Suite commands open to every group. What Music actually lets through
+  differs from the sdef in both directions, so it was measured (next bullet).
+- **What Music answers a sandboxed app** (October 28, 2026, 4:15–5:05 AM PT, Music 1.7, on a
+  Release-configuration build with only `library.read-write`; `OLDTUNES_HARNESS=musicaccess`
+  asks it all again, read-only). Music refuses an event outside the sender's access groups with
+  **-10004** (errAEPrivilegeError), not -1743. It answered everything through
+  `source 1 ▸ library playlist 1 ▸ tracks`, through the application's own `tracks` and
+  `playlists`, and through its own replies (`shared track id 12345 of library playlist id 67 of
+  source id 64`), a `file track` included, although the sdef gives `file track` no group at all.
+  Adding `library.read` or `playback` changed nothing. It refused three shapes:
+  - Anything addressed as a generic `item` (class `cobj`). ScriptingBridge's `first` and
+    `object(at:)` of a filtered element array send exactly that (`item 1 of every track whose
+    …`, seen with `AEDebugSends=1`), so every tag save and playlist lookup failed until
+    `MusicScriptingSession` resolved its `whose` lookups with `get`, which hands back Music's
+    own references.
+  - `folder playlist id … of source id …`, which is how Music answers `make new folder
+    playlist`: a source has no `folder playlist` element. So playlists are looked up by id and
+    addressed as `playlist id … of source 1`, and `make`'s answer is readdressed as a `playlist`.
+  - The application's `user playlist` (not an element of the application).
+  `location` of `file track` is in no group either, so the `musicadd` bench reads a song's file
+  location through iTunesLibrary. With those changes the live checks passed on that build:
+  `musictag` saved and restored a comment, `musicplaylists` passed all 8 steps, and a title and
+  comment written back unchanged through the real save path were accepted. `musicadd` passed
+  on the Debug build. Setting artwork through Music has no bench yet. A -10004 is an OldTunes
+  bug, never the user's to fix, so `describe` says only that Music refused and logs it.
+- **The iCloud audio route and the visualizer's tap:** Core Audio process taps and private
+  aggregate devices need no entitlement here (§3.6 for the permission).
 
-If we ever do sandbox, the entitlements are: `app-sandbox`, `network.client`, `assets.music.read-write`, `files.user-selected.read-write`, and `scripting-targets = {"com.apple.Music": ["com.apple.Music.library.read-write", "com.apple.Music.playback"]}`. Do **not** add a `temporary-exception.mach-lookup`; `frameworks.sb` already covers it.
+Measured on this Mac, macOS 27.0.1, October 28, 2026, 3:13–3:40 AM PT, with throwaway sandboxed
+apps signed with the team's Apple Development certificate:
+
+- `Contents/Resources/container-migration.plist` with `Move` entries
+  `${ApplicationSupport}/<folder>` and `${Library}/Preferences/<bundle id>.plist` moved both
+  into the container the first time the app opened, and `UserDefaults` read the moved value.
+  It runs only when macOS makes the container: with the container there, new files at the old
+  paths stayed put. Apple says deleting the container makes the next launch migrate again;
+  Finder can delete it, Terminal can't.
+- Nothing outside the app can read or delete its container ("Operation not permitted", even
+  for an app of the same team), and once the container exists, `defaults read` or `write` of
+  the bundle ID from Terminal goes to the container's plist and fails. An unsandboxed copy with
+  the same bundle ID keeps using `~/Library/Preferences` and `~/Library/Application Support`.
+- Sandboxed, `FileManager.homeDirectoryForCurrentUser`, `NSHomeDirectory()` and `$HOME` are the
+  container, `~/Library/Containers/<bundle id>/Data`; `getpwuid(getuid())` still gives the real
+  home.
+- The sandbox lets any app read any file's metadata (`application.sb`: `(allow
+  file-read-metadata)`), so `FileManager.fileExists` says yes for files and folders the app may
+  not open, and a walk of such a folder returns nothing, with no error. So `rescanFolder` treats
+  a folder it can't open as unavailable (its rows are marked missing), never as an empty folder
+  whose files were all deleted. `PlaybackCoordinator.isShut` opens the file to find out.
+- `responsibility_get_pid_responsible_for_pid` answers for other processes inside the sandbox
+  (asked about this shell, it named the same app as an unsandboxed caller), `TCCAccessPreflight`
+  answers, Core Audio's process list and its bundle IDs are readable, and `proc_pidpath` works.
+- `open --stdout <file>` captures a sandboxed app's stdout, and temporary-exception
+  `absolute-path` and `home-relative-path` entries work.
+- On macOS 27, walking into `~/Music/Music` raises the Media & Apple Music prompt, even for a
+  sandboxed app that may read `~/Music`. OldTunes already holds that permission.
+- Every file a sandboxed OldTunes makes gets `com.apple.quarantine` (`0086;…;OldTunes;`), and
+  the app can't remove it (`application.sb` 786–787). Seen on every fixture the sandboxed
+  metadata bench made, those its `say`, `afconvert` and `lame` children wrote included. The safe
+  write's swapped-in copy (§6.4) is such a file, so a song whose tags OldTunes saved carries the
+  flag. Nothing reads it on an audio file.
+
+**What moves when OldTunes is first sandboxed.** `OldTunes/App/container-migration.plist`
+moves `~/Library/Application Support/OldTunes` (the index with its `-wal`, `-shm` and any
+`corrupt-` copies) and `~/Library/Preferences/com.noahtsutsui.oldtunes.plist`. The index is not
+only a cache: it holds folder songs, the record of songs handed to Music and every checkbox the
+user changed. The old log stays in `~/Library/Logs/OldTunes`. Migration happens once per Mac,
+on the first launch of any sandboxed build, Debug included, so the first sandboxed bench run on
+a Mac moves that Mac's data. If no index is there at launch, `AppAssembly` counts that as a
+rebuild, so the added folders are re-added from the settings.
+
+**Folders added before the sandbox** have no bookmark, and a sandboxed app can't make one
+without the user choosing the folder. At launch, after the first ingest, OldTunes lists them
+in one alert and opens a panel at each; Allow (or choosing a folder around it) keeps a bookmark
+and rescans it. Until then their songs show as missing. **Music songs outside `~/Music`** (a
+Music Media folder on another drive) can't be opened either. They play from iCloud when they
+are in the iCloud Music Library; otherwise the reason says to add their folder with Add Folder,
+which opens it for good. The folder's scan skips the files Music lists, so nothing shows twice.
+Apple's page for `ITLibMediaItem.location` says those URLs come security-scoped, but the index
+keeps paths, not URLs, so OldTunes doesn't rely on that.
+
+**Debug builds** sign with `OldTunes-Debug.entitlements`, which `tools/debug-entitlements.sh`
+makes from the release file after every `xcodegen generate`, adding what only the test benches
+need: `/private/tmp/` read-write (their index, fixtures, snapshots and evidence; nothing can
+read files a bench writes inside the container), `~/Library/Logs/OldTunes/` read-write (so a
+Debug build keeps its log where people and benches read it; `Log.directory`), `/opt/homebrew/`
+read-only (the metadata bench runs `lame`), and Music's `playback` access group (the A/B bench
+plays songs in Music). Release builds never carry them; `tools/release.sh` refuses a build that
+does. The App Store rarely accepts temporary exceptions, and OldTunes itself never sends Music a
+playback command. Because Debug reaches more of Music than a release build, Music scripting
+needs checking on a Release build too.
+
+**A release build's log** is in its container,
+`~/Library/Containers/com.noahtsutsui.oldtunes/Data/Library/Logs/OldTunes/oldtunes.log`, which
+Terminal can't read. Every line also goes to the unified log at the notice level, which macOS
+keeps on disk: `log show --last 1h --predicate 'subsystem == "com.noahtsutsui.oldtunes"'`.
 
 ### 3.2 Info.plist — `/Users/noah/Projects/iJustWantToListenToMyOldMusic/OldTunes/App/Info.plist`
 
@@ -216,30 +334,23 @@ Exactly **one** privacy key unlocks both MusicKit and iTunesLibrary. `kTCCServic
 
 Caveat on the existing `project.yml`: it declares `info: path: … properties: {…}`, which makes xcodegen **generate** that file and overwrite the hand-written one. Keep the two in sync, or (preferred) delete the `properties:` block from `project.yml` and let the checked-in plist be the source of truth.
 
-### 3.3 Entitlements — `/Users/noah/Projects/iJustWantToListenToMyOldMusic/OldTunes/App/OldTunes.entitlements`
+### 3.3 Entitlements — `OldTunes/App/OldTunes.entitlements`
 
-There is **no entitlement for MusicKit and no entitlement for media-library access.** A grep for `com.apple.developer.musickit*` across Xcode 27 and MacOSX27.sdk returns nothing, and MusicKit is absent from Xcode's cached portal capability list. The only hardened-runtime resource entitlements tccd knows about are camera, audio-input, addressbook, calendars, photos-library and automation.apple-events. So the whole file is two keys:
+There is **no entitlement for MusicKit and no entitlement for media-library access.** A grep for `com.apple.developer.musickit*` across Xcode 27 and MacOSX27.sdk returns nothing, and MusicKit is absent from Xcode's cached portal capability list. The only hardened-runtime resource entitlements tccd knows about are camera, audio-input, addressbook, calendars, photos-library and automation.apple-events.
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>com.apple.security.app-sandbox</key>              <false/>
-	<key>com.apple.security.automation.apple-events</key>  <true/>
-</dict>
-</plist>
-```
+Since October 28, 2026 the file is hand-written, with a comment on each key, and holds the App Sandbox and what OldTunes needs inside it (§3.1):
 
-`project.yml` currently has `entitlements: properties: {}`, which regenerates an empty dict. Change it to:
+| Key | Value | For |
+|---|---|---|
+| `com.apple.security.app-sandbox` | true | The Mac App Store requires it. |
+| `com.apple.security.network.client` | true | MusicKit's requests from inside the app. |
+| `com.apple.security.assets.music.read-only` | true | Playing the Music library's own files in `~/Music`. |
+| `com.apple.security.files.user-selected.read-write` | true | The Add Folder panel; read-write for tag saves in added folders. |
+| `com.apple.security.files.bookmarks.app-scope` | true | Keeping added folders open across launches. |
+| `com.apple.security.automation.apple-events` | true | The hardened runtime's half of Apple Events to Music. |
+| `com.apple.security.scripting-targets` | `{com.apple.Music: [com.apple.Music.library.read-write]}` | The sandbox's half: tag saves, Add to Music, playlist commands. |
 
-```yaml
-    entitlements:
-      path: OldTunes/App/OldTunes.entitlements
-      properties:
-        com.apple.security.app-sandbox: false
-        com.apple.security.automation.apple-events: true
-```
+`project.yml` names the file in `CODE_SIGN_ENTITLEMENTS` instead of an XcodeGen `entitlements:` block, which would set one file for every configuration: Debug signs with `OldTunes-Debug.entitlements` (§3.1). Do **not** add `com.apple.security.device.audio-input`: App Review would ask why a player wants the microphone, and the taps don't need it. Measured October 28, 2026, 4:05 AM PT, sandboxed without it: the tap bench read a cloud song at −14.8 dBFS RMS through RemotePlayerService (99.4% non-zero samples), as unsandboxed on October 20, and the route bench passed 15 of 15.
 
 Hardened runtime is already on (`ENABLE_HARDENED_RUNTIME: YES`). Keep it: TCC keys a grant to the bundle id **plus the code's designated requirement**, and a stable signature is what makes the grant survive rebuilds.
 
@@ -265,22 +376,7 @@ Apple Development: Noah Tsutsui (H3ZP723CJJ)
 Developer ID Application: Noah Tsutsui (92N52YB23U)
 ```
 
-Always pass the full identity string. Dev loop — on Noah's Mac, from `/Users/noah/Projects/iJustWantToListenToMyOldMusic`:
-
-```bash
-cd /Users/noah/Projects/iJustWantToListenToMyOldMusic
-xcodegen generate
-xcodebuild -project OldTunes.xcodeproj -scheme OldTunes -configuration Debug \
-  -derivedDataPath build/dd build
-codesign --force --options runtime --timestamp \
-  --entitlements OldTunes/App/OldTunes.entitlements \
-  --sign "Apple Development: Noah Tsutsui (H3ZP723CJJ)" \
-  build/dd/Build/Products/Debug/OldTunes.app
-codesign -dvv build/dd/Build/Products/Debug/OldTunes.app 2>&1 | grep TeamIdentifier
-open build/dd/Build/Products/Debug/OldTunes.app
-```
-
-That `grep` must print `TeamIdentifier=92N52YB23U` before you trust a test run. Shipping build: same command with `--sign "Developer ID Application: Noah Tsutsui (92N52YB23U)"`, then `--deep` verify and notarize. When SFBAudioEngine is added, its 10 `@rpath` frameworks in `Contents/Frameworks` must each be signed with the same identity before notarization, or the app will not launch on a clean machine.
+Always pass the full identity string. Dev loop: README ▸ Build and run, which signs the Debug build automatically with "Apple Development: Noah Tsutsui (H3ZP723CJJ)" and `OldTunes/App/OldTunes-Debug.entitlements`. Don't re-sign it with `codesign --entitlements OldTunes/App/OldTunes.entitlements`: since October 28, 2026 that is the release set, and it would strip the test benches' sandbox exceptions (§3.1). `codesign -dvv build/dd/Build/Products/Debug/OldTunes.app 2>&1 | grep TeamIdentifier` must print `TeamIdentifier=92N52YB23U` before you trust a test run. TCC keeps one grant per signature, so a bench that needs MusicKit, Music scripting or a process tap runs on a Debug build signed with Developer ID, the installed app's signature (`-derivedDataPath build/dd-devid CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application: Noah Tsutsui (92N52YB23U)" DEVELOPMENT_TEAM=92N52YB23U`); an Apple Development build asks again and takes the grant from the installed app. Shipping build: `tools/release.sh`, which signs with Developer ID, checks the release entitlements and notarizes.
 
 **Never ad-hoc sign during development.** `codesign --sign -` falls back to the cdhash, which changes every build, so the Media & Apple Music grant is destroyed on every rebuild and the app silently reports `.denied` all day.
 
@@ -710,6 +806,8 @@ do {
 ```
 
 Do not restore the old mtime afterwards. A changed modification date is the honest signal that the file was edited.
+
+In the App Sandbox the swapped-in copy also gains `com.apple.quarantine`, which a sandboxed app can't remove (§3.1). It is harmless for audio, and the metadata bench's round trip leaves it out when it compares attributes.
 
 ### 6.5 Cloud-only tracks — Music.app scripting
 

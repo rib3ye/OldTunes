@@ -17,8 +17,10 @@ enum Snapshot {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(delay))
             let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.orderedWindows.first { $0.isVisible }
-            if let window, write(window, to: URL(fileURLWithPath: path)) {
-                Log.info("snapshot written: \(path) (\(Int(window.frame.width))x\(Int(window.frame.height)) pt)")
+            if let window {
+                if write(window, to: URL(fileURLWithPath: path)) {
+                    Log.info("snapshot written: \(path) (\(Int(window.frame.width))x\(Int(window.frame.height)) pt)")
+                }
             } else {
                 Log.error("snapshot failed: no visible window")
             }
@@ -35,6 +37,13 @@ enum Snapshot {
         // The rep is in the display's profile. Convert so pixel checks can compare against sRGB hex values.
         let srgb = rep.converting(to: .sRGB, renderingIntent: .default) ?? rep
         guard let png = srgb.representation(using: .png, properties: [:]) else { return false }
-        return (try? png.write(to: url)) != nil
+        do {
+            try png.write(to: url)
+            return true
+        } catch {
+            // A path the sandbox won't open lands here (Debug builds may write /private/tmp only).
+            Log.error("snapshot failed: could not write \(url.path): \(error.localizedDescription)")
+            return false
+        }
     }
 }

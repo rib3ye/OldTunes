@@ -74,7 +74,7 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
         var report = MusicHandoffReport(root: root)
         let owned = try await index.musicOwnedPaths()
         // Finder order, so an album reaches Music track by track.
-        let files = await FolderScanner.scan(root).map(\.path)
+        let files = await FolderScanner.scan(root).files.map(\.path)
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         let offers = files.filter { !owned.contains($0) }
         report.alreadyInMusic = files.count - offers.count
@@ -347,14 +347,17 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
     /// their rows untouched.
     private func rescanFolder(_ root: String) async throws -> FolderScan {
         var scan = FolderScan()
-        let available = FileManager.default.fileExists(atPath: root)
+        let there = FileManager.default.fileExists(atPath: root)
+        let available = there && FolderScanner.canOpen(root)
         scan.availabilityFlips = try await index.setFolderRoot(root, available: available)
         guard available else {
-            Log.info("library: folder \(root) is not available; its rows are marked missing")
+            Log.info("library: folder \(root) is \(there ? "shut to OldTunes until chosen again" : "not available"); " +
+                     "its rows are marked missing")
             return scan
         }
 
-        let files = await FolderScanner.scan(root)
+        let walk = await FolderScanner.scan(root)
+        let files = walk.files
         let known = try await index.folderFiles(under: root)
         // Swift compares and hashes strings by canonical equivalence, so a Music path spelled in
         // NFD still matches the walk's NFC spelling of the same file (the harness checks this).
@@ -366,12 +369,21 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
             return old.size != file.size || old.mtime != file.mtime
         }
         let present = Set(files.map(\.path)).subtracting(ownedByMusic)
-        let gone = known.keys.filter { !present.contains($0) }
+        // A file under a subfolder the walk couldn't open wasn't seen, not deleted: its row is
+        // marked missing below, and comes back when OldTunes may open the folder again.
+        let shut = walk.shut.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        let gone = known.keys.filter { path in !present.contains(path) && !shut.contains { path.hasPrefix($0) } }
 
         let records = await FolderScanner.records(for: changed, addedAt: Int64(Date().timeIntervalSince1970))
         try await index.upsertFolderRecords(records)
         scan.addedOrUpdated = records.count
         scan.removed = try await index.deleteFolderRows(paths: Array(gone))
+        for folder in walk.shut {
+            scan.availabilityFlips += try await index.setFolderRoot(folder, available: false)
+        }
+        if !walk.shut.isEmpty {
+            Log.info("library: folder \(root): \(walk.shut.count) folder(s) inside are shut to OldTunes; their rows are marked missing")
+        }
         if scan.addedOrUpdated > 0 || scan.removed > 0 {
             Log.info("library: folder \(root): \(files.count) files, \(scan.addedOrUpdated) added/updated, \(scan.removed) removed")
         }

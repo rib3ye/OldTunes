@@ -958,8 +958,12 @@ extension RenderBench {
             data[i * 4 + 2] = bytes[i * 4]
             data[i * 4 + 3] = 255
         }
-        if let png = rep.representation(using: .png, properties: [:]), (try? png.write(to: url)) != nil {
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        do {
+            try png.write(to: url)
             bench.note("snapshot written: \(url.path) (\(w)×\(h) px, made-up content)")
+        } catch {
+            bench.note("snapshot NOT written to \(url.path): \(error.localizedDescription)")
         }
     }
 }

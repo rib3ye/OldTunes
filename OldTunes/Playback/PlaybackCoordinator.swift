@@ -476,7 +476,11 @@ final class PlaybackCoordinator: PlaybackControlling {
         }
         if announce { show() }
         var reason = "it is not on this Mac and is not in your iCloud Music Library."
-        if let url = track.fileURL, FileManager.default.fileExists(atPath: url.path) {
+        if let url = track.fileURL, FileManager.default.fileExists(atPath: url.path), Self.isShut(url) {
+            // Still worth trying iCloud below: a Music song outside ~/Music may stream from there.
+            reason = Self.shutReason
+            Log.info("playback: the sandbox won't let OldTunes open \(url.path)")
+        } else if let url = track.fileURL, FileManager.default.fileExists(atPath: url.path) {
             show()
             // Before the load: a preloaded file starts sounding the moment load() advances to it.
             local.soundCheckGain = SoundCheck.gain(energy: track.soundCheckEnergy)
@@ -567,8 +571,27 @@ final class PlaybackCoordinator: PlaybackControlling {
         if error is TimeoutError {
             return fromCloud ? "iCloud took too long to start it." : "its file took too long to open."
         }
-        if (error as NSError).domain == NSURLErrorDomain { return "iCloud can't be reached right now." }
+        // AVFoundation reports a file it may not read in NSURLErrorDomain too (-1102).
+        if fromCloud, (error as NSError).domain == NSURLErrorDomain { return "iCloud can't be reached right now." }
         return fromCloud ? "iCloud couldn\u{2019}t prepare it for playback." : "its file could not be opened."
+    }
+
+    /// Why a song whose file the sandbox keeps shut can't play. Adding the folder it is in opens
+    /// it, and every song file under it, for good; the folder's scan skips the files Music lists,
+    /// so a Music song doesn't show twice.
+    static let shutReason = "OldTunes isn\u{2019}t allowed to open its file. Add the folder it\u{2019}s in with "
+        + "File \u{25B8} Add Folder to Library, and OldTunes can play it."
+
+    /// True when the file is there but OldTunes may not read it: in the App Sandbox, a file outside
+    /// ~/Music and outside every folder the user chose (RESEARCH.md §3.1). FileManager still says
+    /// such a file exists, since the sandbox lets anyone look at a file's metadata.
+    static func isShut(_ url: URL) -> Bool {
+        let fd = open(url.path, O_RDONLY)
+        if fd >= 0 {
+            close(fd)
+            return false
+        }
+        return errno == EPERM || errno == EACCES
     }
 
     /// Why no song can stream from iCloud right now, or nil if MusicKit is authorized.

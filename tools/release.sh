@@ -96,10 +96,24 @@ for code in "$app" "$app"/Contents/Frameworks/*.framework; do
   fi
 done
 [[ "$(codesign -dvv "$app" 2>&1)" == *"(runtime)"* ]] || { echo "$0: the app lacks hardened runtime" >&2; exit 1; }
-if codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q get-task-allow; then
+entitlements=$(codesign -d --entitlements - --xml "$app" 2>/dev/null)
+if [[ "$entitlements" == *get-task-allow* ]]; then
   echo "$0: the app has get-task-allow, which notarization refuses" >&2
   exit 1
 fi
+# Sandboxed, and with none of the test benches' extras that only Debug builds may carry
+# (tools/debug-entitlements.sh): the sandbox exceptions, and Music's playback access group.
+if [[ "$entitlements" != *"<key>com.apple.security.app-sandbox</key><true/>"* || "$entitlements" == *temporary-exception* ||
+      "$entitlements" == *com.apple.Music.playback* ]]; then
+  echo "$0: the app's entitlements are not the release set in OldTunes/App/OldTunes.entitlements:" >&2
+  echo "$entitlements" >&2
+  exit 1
+fi
+# The list of what macOS moves into the container the first time a sandboxed OldTunes opens. It
+# only ever runs that once, so a release without it would leave people's settings behind.
+migration="$app/Contents/Resources/container-migration.plist"
+[[ -f "$migration" ]] && plutil -lint -s "$migration" ||
+  { echo "$0: the app has no valid Contents/Resources/container-migration.plist" >&2; exit 1; }
 plist="$app/Contents/Info.plist"
 shown="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"))"
 [[ "$shown" == "$version ($build)" ]] || { echo "$0: the app says it is $shown, not $version ($build)" >&2; exit 1; }

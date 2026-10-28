@@ -148,34 +148,38 @@ enum MusicAddLiveTest {
             return
         }
         let expected = title
-        let file: URL?
+        // From iTunesLibrary: a file track's `location` is in no access group of Music's
+        // dictionary, so a sandboxed app can't read it by scripting.
+        let file = await lookup.location(of: pid).map { URL(fileURLWithPath: $0) }
         do {
-            file = try await MusicScriptingSession.run { () -> URL? in
+            try await MusicScriptingSession.run {
                 let session = try MusicScriptingSession(for: .addingSongs)
                 let track = try session.track(persistentID: pid)
                 let name = try session.name(of: track)
                 guard name == expected else {
                     throw TagEditError(message: "Track \(hex) is “\(name ?? "nil")”, not the test tone; nothing removed.")
                 }
-                let file = try? session.location(of: track)
                 try session.delete(track)
-                return file
             }
         } catch {
             Log.error("musicadd: FAIL removing \(hex): \(error.localizedDescription)")
             return
         }
         Log.info("musicadd: removed \(hex) from Music's library")
-        // Music may move a file in its Media folder to the Trash itself as it deletes the track.
+        // Music removes its own copy in its Media folder a few seconds after the track (seen
+        // October 20 and 28, 2026). Only Music can: a sandboxed OldTunes may read ~/Music, not
+        // change it. A file Music didn't copy there (a scratchpad original) goes to the Trash.
         if let file, file.lastPathComponent.contains(expected) {
+            for _ in 0..<15 where FileManager.default.fileExists(atPath: file.path) {
+                try? await Task.sleep(for: .seconds(1))
+            }
             var trashed: NSURL?
-            do {
-                try FileManager.default.trashItem(at: file, resultingItemURL: &trashed)
+            if !FileManager.default.fileExists(atPath: file.path) {
+                Log.info("musicadd: its file is gone from \(file.path); Music removed it")
+            } else if (try? FileManager.default.trashItem(at: file, resultingItemURL: &trashed)) != nil {
                 Log.info("musicadd: moved its file to the Trash: \(trashed?.path ?? file.path)")
-            } catch where !FileManager.default.fileExists(atPath: file.path) {
-                Log.info("musicadd: its file is already gone from \(file.path); Music removed it")
-            } catch {
-                Log.error("musicadd: FAIL its file is still at \(file.path): \(error.localizedDescription)")
+            } else {
+                Log.error("musicadd: FAIL its file is still at \(file.path); delete it in Finder")
             }
         }
         let gone = await lookup.waitForRemoval(persistentID: pid, seconds: 60)
@@ -214,6 +218,11 @@ private actor MusicLibraryLookup {
             try? await Task.sleep(for: .seconds(2))
         }
         return (nil, String(format: "%.1f", Date().timeIntervalSince(start)))
+    }
+
+    /// Where Music keeps the song's file, if it lists the song.
+    func location(of persistentID: Int64) -> String? {
+        items().first { Self.pid($0) == persistentID }?.location?.path
     }
 
     /// Polls until Music no longer lists the song; always looks at least once.

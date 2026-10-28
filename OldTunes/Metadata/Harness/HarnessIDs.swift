@@ -55,9 +55,16 @@ enum HarnessIDs {
     /// If Music shares its library XML, its "Persistent ID" strings are the same format
     /// AppleScript uses — an independent check of the conversion. Read-only.
     private static func crossCheckWithLibraryXML(sample: HarnessLibrarySample, tally: HarnessTally) {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        // The real home: in the sandbox, homeDirectoryForCurrentUser is the app's container.
+        let home = getpwuid(getuid()).map { URL(fileURLWithPath: String(cString: $0.pointee.pw_dir)) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
         let candidates = ["Music/Music/Library.xml", "Music/iTunes/iTunes Music Library.xml",
                           "Music/iTunes/iTunes Library.xml"].map { home.appendingPathComponent($0) }
+        if let unreadable = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path)
+                                                         && !FileManager.default.isReadableFile(atPath: $0.path) }) {
+            Log.info("pid XML cross-check: \(unreadable.path) is there but OldTunes may not read it; skipped")
+            return
+        }
         guard let url = candidates.first(where: { FileManager.default.isReadableFile(atPath: $0.path) }),
               let data = FileManager.default.contents(atPath: url.path),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],

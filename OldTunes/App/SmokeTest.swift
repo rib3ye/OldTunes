@@ -17,7 +17,9 @@ struct SmokeTest {
         let path = ProcessInfo.processInfo.environment["OLDTUNES_SMOKE_DIR"]
             ?? FileManager.default.temporaryDirectory.appendingPathComponent("oldtunes-smoke").path
         dir = URL(fileURLWithPath: path, isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) } catch {
+            Log.error("smoke: no snapshots, can't make \(dir.path): \(error.localizedDescription)")
+        }
     }
 
     func run(_ report: IngestReport) async {

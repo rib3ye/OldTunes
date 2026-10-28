@@ -77,6 +77,24 @@ play at their own level, the volume slider is greyed out during them, and the vi
 can't hear the music; turn OldTunes on in System Settings ▸ Privacy & Security ▸ Screen &
 System Audio Recording, under System Audio Recording Only, then quit and reopen OldTunes.
 
+## The sandbox
+
+OldTunes runs in macOS's App Sandbox, the security container every Mac App Store app runs in.
+It can open your Music folder (`~/Music`) and the folders you add with Add Folder, and nothing
+else on your Mac. What that means for you:
+
+- **Your settings and library come along.** The first time a sandboxed OldTunes opens, macOS
+  moves its settings and library index from `~/Library` into OldTunes's own folder,
+  `~/Library/Containers/com.noahtsutsui.oldtunes`. It does this once. An older, unsandboxed
+  OldTunes opened after that starts without them.
+- **Folders you added before the sandbox need choosing once more.** OldTunes asks at launch
+  and opens a panel at each folder: click Allow. Until then their songs show as missing. They
+  aren't removed.
+- **Music songs stored outside `~/Music`**, for example a Music Media folder on another drive,
+  play from iCloud when they're in your iCloud Music Library. Otherwise OldTunes says it isn't
+  allowed to open the file. Add the folder they're in with Add Folder, and they play from it:
+  the songs still show once, as Music songs.
+
 ## Build and run
 
 On your Mac, in the folder you cloned this repo into (the one with `project.yml`). Needs
@@ -95,7 +113,9 @@ open build/dd/Build/Products/Debug/OldTunes.app
 Builds are signed as "Apple Development: Noah Tsutsui", team 92N52YB23U. Never ad-hoc sign
 (`codesign -s -`): the signature changes every build and macOS forgets the library permission.
 
-`project.yml` is the source of truth; the `.xcodeproj` is generated and not committed.
+`project.yml` is the source of truth; the `.xcodeproj` is generated and not committed, and so is
+`OldTunes/App/OldTunes-Debug.entitlements`, which `xcodegen generate` writes from
+`OldTunes.entitlements` (`tools/debug-entitlements.sh`).
 
 ## Releases
 
@@ -181,10 +201,19 @@ runs on it.
 - Test benches: launch with `open -n --env OLDTUNES_HARNESS=<name> …/OldTunes.app` where
   `<name>` is `smoke` (end to end), `library`, `playback`, `metadata`, `chrome`, `lists`,
   `appearance` (light and dark, with an invented library), `visualizer` (pick a part with
-  `OLDTUNES_VIS_MODE`; see `docs/VISUALIZER.md`), or `authcheck`.
+  `OLDTUNES_VIS_MODE`; see `docs/VISUALIZER.md`), `authcheck`, or `musicaccess` (which ways of
+  naming songs and playlists Music answers inside the sandbox; read-only, changes nothing).
   `OLDTUNES_SNAPSHOT=/path.png` renders the window to a PNG; `OLDTUNES_DB_PATH` points the
   index somewhere else. Test benches run in Light; `OLDTUNES_APPEARANCE=dark` runs one in the
   dark without changing the saved setting.
+
+  OldTunes runs in the App Sandbox, so a bench can read and write only its container and, in a
+  Debug build, `/private/tmp` (`/tmp` is the same folder) and `~/Library/Logs/OldTunes`
+  (`tools/debug-entitlements.sh`). Put every path you pass a bench, such as the index,
+  snapshots and evidence folders, under `/private/tmp`. Without a path, a bench writes inside
+  the container, where nothing outside the app can read it. `open --stdout <file>` captures a
+  run's log lines too. The settings and index a bench uses without `OLDTUNES_DB_PATH` are the
+  container's, shared with any other sandboxed OldTunes, not those in `~/Library`.
 
   The `library` bench runs only when `OLDTUNES_DB_PATH` contains `/scratchpad/evidence/library/`
   or `/scratchpad/fixes/library/`, and it adds a folder of invented audio files that must
@@ -209,4 +238,12 @@ runs on it.
   `OldTunes/App/MusicTagLiveTest.swift`, `OldTunes/App/MusicAddLiveTest.swift` and
   `OldTunes/App/MusicPlaylistLiveTest.swift` say how to run them.
 - `docs/RESEARCH.md` §7.7 — the dark ("Graphite") colors and how the switch works.
-- Logs: `~/Library/Logs/OldTunes/oldtunes.log` (Pacific time).
+- Logs, in Pacific time. A Debug build's full log is `~/Library/Logs/OldTunes/oldtunes.log`. A
+  release build may write only inside its sandbox container, so its file is
+  `~/Library/Containers/com.noahtsutsui.oldtunes/Data/Library/Logs/OldTunes/oldtunes.log`, which
+  Finder can open but Terminal can't read. A release build also sends every line to macOS's own
+  log, which keeps it on disk. To read the last hour of it, on your Mac, from any directory:
+
+  ```bash
+  /usr/bin/log show --last 1h --predicate 'subsystem == "com.noahtsutsui.oldtunes"'
+  ```

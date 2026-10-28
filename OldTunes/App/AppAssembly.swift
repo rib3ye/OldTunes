@@ -13,8 +13,15 @@ enum AppAssembly {
         } catch {
             // Even a freshly created index failed: the disk or the folder is the problem, not the file.
             Log.error("launch failed: \(error)")
+            // A test bench quits at once, rather than waiting for a click on an alert no one sees
+            // (for example an OLDTUNES_DB_PATH the sandbox won't open).
+            if !(ProcessInfo.processInfo.environment["OLDTUNES_HARNESS"] ?? "").isEmpty {
+                Log.flush()
+                NSApp.terminate(nil)
+                return
+            }
             RetroAlert.runModal("OldTunes could not create its library database.",
-                                informative: "\(error.localizedDescription)\n\nCheck that ~/Library/Application Support is writable.",
+                                informative: "\(error.localizedDescription)\n\nCheck that \(indexURL.deletingLastPathComponent().path) is writable.",
                                 buttons: ["Quit"])
             NSApp.terminate(nil)
             return
@@ -49,8 +56,14 @@ enum AppAssembly {
             moveAside(url)
             return (try LibraryIndex(), true)
         }
+        // No index yet counts as a rebuild too, so the added folders come back: a sandboxed
+        // OldTunes's first launch finds its index here only if macOS moved the old one into the
+        // container (container-migration.plist). Not for a bench's own index (OLDTUNES_DB_PATH),
+        // which must stay free of the user's folders.
+        let fresh = (ProcessInfo.processInfo.environment["OLDTUNES_DB_PATH"] ?? "").isEmpty
+            && !FileManager.default.fileExists(atPath: url.path)
         do {
-            return (try LibraryIndex(), false)
+            return (try LibraryIndex(), fresh)
         } catch {
             Log.error("index: could not open \(url.path) (\(error)); rebuilding")
             moveAside(url)

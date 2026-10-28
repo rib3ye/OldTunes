@@ -23,31 +23,59 @@ enum FolderScanner {
         return String(cString: resolved)
     }
 
+    /// Whether OldTunes may open `root` (a folder, or a file added on its own). In the sandbox a
+    /// folder can be there and still shut to OldTunes (FolderAccess); a walk of it would find
+    /// nothing, which a rescan must not read as every file deleted.
+    static func canOpen(_ root: String) -> Bool {
+        if let directory = opendir(root) {
+            closedir(directory)
+            return true
+        }
+        guard errno == ENOTDIR else { return false }
+        let fd = open(root, O_RDONLY)
+        if fd >= 0 { close(fd) }
+        return fd >= 0
+    }
+
+    /// What a walk found under a root.
+    struct Walk: Sendable {
+        var files: [FileInfo] = []
+        /// Folders under the root that OldTunes may not open. In the sandbox a folder can be shut
+        /// while the one around it opens (inside ~/Music/iTunes/iTunes Media only the Music
+        /// folder opens without a grant), and a walk lists nothing under it, with no error.
+        var shut: [String] = []
+    }
+
     /// Every playable file under `root` (or `root` itself when it is a file). Paths are built
     /// from `root` plus the walk's relative paths, so they always share the root's spelling.
     /// Synchronous because a directory walk cannot be iterated from an async context.
-    static func audioFiles(under root: String) -> [FileInfo] {
+    static func audioFiles(under root: String) -> Walk {
         let fm = FileManager.default
         var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: root, isDirectory: &isDirectory) else { return [] }
+        guard fm.fileExists(atPath: root, isDirectory: &isDirectory) else { return Walk() }
         guard isDirectory.boolValue else {
             let attributes = (try? fm.attributesOfItem(atPath: root)) ?? [:]
-            return fileInfo(root, attributes).map { [$0] } ?? []
+            return Walk(files: fileInfo(root, attributes).map { [$0] } ?? [])
         }
-        guard let walker = fm.enumerator(atPath: root) else { return [] }
-        var files: [FileInfo] = []
+        guard let walker = fm.enumerator(atPath: root) else { return Walk() }
+        var walk = Walk()
         while let relative = walker.nextObject() as? String {
             let path = (root as NSString).appendingPathComponent(relative)
             let attributes = walker.fileAttributes ?? [:]
             let type = attributes[.type] as? FileAttributeType
             if type == .typeDirectory {
-                if (relative as NSString).lastPathComponent.hasPrefix(".") || isPackage(path) { walker.skipDescendants() }
+                if (relative as NSString).lastPathComponent.hasPrefix(".") || isPackage(path) {
+                    walker.skipDescendants()
+                } else if !canOpen(path) {
+                    walk.shut.append(path)
+                    walker.skipDescendants()
+                }
                 continue
             }
             guard !(relative as NSString).lastPathComponent.hasPrefix(".") else { continue }
-            if let info = fileInfo(path, attributes) { files.append(info) }
+            if let info = fileInfo(path, attributes) { walk.files.append(info) }
         }
-        return files
+        return walk
     }
 
     private static func fileInfo(_ path: String, _ attributes: [FileAttributeKey: Any]) -> FileInfo? {
@@ -65,7 +93,7 @@ enum FolderScanner {
 
     /// The directory walk, moved off the caller's actor.
     @concurrent
-    static func scan(_ root: String) async -> [FileInfo] {
+    static func scan(_ root: String) async -> Walk {
         audioFiles(under: root)
     }
 

@@ -561,16 +561,20 @@ final class ListsReviewBench {
         await tracks.waitForLoad()
         await pause(100)
         await lib.setInterruptible(nil)
+        // A marker with the nonce proves the log was read: an unreadable log would find no ERROR too.
+        Log.info("lists review: cancelled-load check \(nonce) reads the log")
         Log.flush()
         let logged = Self.logLines(containing: nonce)
         let errors = logged.filter { $0.contains(" ERROR ") }
-        check("an interrupted, cancelled load is not logged as ERROR", errors.isEmpty && tracks.query.sort.field == .time,
-              errors.isEmpty ? "no log line mentions the interrupted query" : "\(errors.count) line(s): \(errors.first ?? "")")
+        let read = logged.contains { $0.contains("cancelled-load check \(nonce)") }
+        check("an interrupted, cancelled load is not logged as ERROR", read && errors.isEmpty && tracks.query.sort.field == .time,
+              !read ? "couldn't read \(Log.directory.path)/oldtunes.log"
+                  : errors.isEmpty ? "no log line mentions the interrupted query" : "\(errors.count) line(s): \(errors.first ?? "")")
     }
 
     /// Lines of the app log (shared by every OldTunes process) that contain `needle`.
     private static func logLines(containing needle: String) -> [String] {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/OldTunes/oldtunes.log")
+        let url = Log.directory.appendingPathComponent("oldtunes.log")
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
         let end = (try? handle.seekToEnd()) ?? 0

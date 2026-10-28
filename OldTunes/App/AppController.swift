@@ -35,7 +35,8 @@ final class AppController: NSObject {
     /// Sync Library, as the first ingest read it. Nil until then.
     private var cloudLibraryOn: Bool?
 
-    /// True when the index was damaged and recreated empty at launch; added folders get re-added.
+    /// True when the index was damaged and recreated empty at launch, or wasn't there at all;
+    /// added folders get re-added.
     private let rebuiltIndex: Bool
 
     init(index: LibraryIndex, rebuiltIndex: Bool = false) {
@@ -80,6 +81,8 @@ final class AppController: NSObject {
         Task {
             // Show whatever the index already holds right away, then refresh behind it.
             await reloadLists()
+            // Before the ingest rescans the added folders.
+            await FolderAccess.openKept()
             let report = await ingest.refresh()
             Log.info("ingest: \(report.status) songs=\(report.musicLibrarySongs) local=\(report.localFiles) " +
                      "cloud=\(report.cloudOnly) joined=\(report.joined) folder=\(report.folderTracks) " +
@@ -93,6 +96,7 @@ final class AppController: NSObject {
                           "Quit and reopen OldTunes to rebuild it. Your music and playlists are not affected.")
             }
             onFirstIngest?(report)
+            if !isTestBench { await askForFolderAccess() }
         }
     }
 
@@ -350,6 +354,8 @@ final class AppController: NSObject {
 
     private func addFolders(_ urls: [URL]) async {
         for url in urls {
+            // Kept before the scan, so a quit during a long one still finds the folder next launch.
+            FolderAccess.remember(url)
             do {
                 let added = try await ingest.addFolder(url)
                 Log.info("add folder: \(url.path) → \(added) tracks")
@@ -369,6 +375,7 @@ final class AppController: NSObject {
         let music = MusicAppLibraryAdder()
         var reports: [MusicHandoffReport] = []
         for url in urls {
+            FolderAccess.remember(url)
             do {
                 let report = try await ingest.addFolder(url, handingOffTo: music)
                 Log.info("add folder with Music: \(url.path) → \(report.handedOff.count) to Music, " +
@@ -425,6 +432,77 @@ final class AppController: NSObject {
         let known = Set(all)
         all += paths.filter { !known.contains($0) }
         UserDefaults.standard.set(all, forKey: handoffsKey)
+    }
+
+    /// A test bench runs by itself, so it never stops for a question no one will answer.
+    private var isTestBench: Bool { !(ProcessInfo.processInfo.environment["OLDTUNES_HARNESS"] ?? "").isEmpty }
+
+    /// Added folders the sandbox keeps shut, most likely added before OldTunes was sandboxed.
+    /// Outside ~/Music their songs show as missing; inside it they play, but Get Info can't save
+    /// their tags. Asked once per launch, after the first ingest, until every folder is open.
+    private func askForFolderAccess() async {
+        let shut = await FolderAccess.shut(among: UserDefaults.standard.stringArray(forKey: Self.foldersKey) ?? [])
+        let all = shut.all
+        guard !all.isEmpty else { return }
+        Log.info("folder access: \(shut.unreadable.count) added folder(s) shut, \(shut.readOnly.count) read-only: " +
+                 all.joined(separator: ", "))
+        let names = all.map { "“\(($0 as NSString).lastPathComponent)”" }.formatted(.list(type: .and))
+        let one = all.count == 1
+        let consequence = shut.unreadable.isEmpty
+            ? "Until then \(one ? "its" : "their") songs play, but changes in Get Info can't be saved."
+            : shut.readOnly.isEmpty ? "Until then \(one ? "its" : "their") songs show as missing."
+            : "Until then some of their songs show as missing, and changes to the others in Get Info can't be saved."
+        let pressed = await RetroAlert.show(
+            one ? "OldTunes needs your OK to open a folder you added." : "OldTunes needs your OK to open \(all.count) folders you added.",
+            informative: "macOS lets OldTunes open only the folders you choose for it. Choose \(names) again, " +
+                "and OldTunes can play \(one ? "its" : "their") songs and save their tags. " + consequence,
+            details: all.joined(separator: "\n"),
+            buttons: ["Not Now", one ? "Choose Folder…" : "Choose Folders…"], cancelIndex: 0, on: windowController.window)
+        guard pressed == 1 else { return }
+        var left = all
+        while let path = left.first {
+            left.removeFirst()
+            // An earlier choice may have opened this one too: a folder around both.
+            guard await !FolderAccess.shut(among: [path]).all.isEmpty else { continue }
+            let opened = await chooseAgain(path, alsoInside: left)
+            left.removeAll { opened.contains($0) }
+        }
+    }
+
+    /// An open panel showing the folder, whose Allow button gives it back to OldTunes. Picking a
+    /// folder around it works too, and then also opens any of `others` inside the chosen one.
+    /// Returns the folders opened.
+    private func chooseAgain(_ path: String, alsoInside others: [String]) async -> [String] {
+        guard let window = windowController.window else { return [] }
+        let name = (path as NSString).lastPathComponent
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: path, isDirectory: true)
+        panel.prompt = "Allow"
+        panel.message = "Click Allow to let OldTunes open “\(name)” again."
+        guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return [] }
+        let chosen = url.standardizedFileURL.path
+        let prefix = chosen.hasSuffix("/") ? chosen : chosen + "/"
+        guard path == chosen || path.hasPrefix(prefix) else {
+            Log.info("folder access: chose \(chosen) for \(path), which isn't it or around it")
+            await RetroAlert.show("That isn't the folder “\(name)”.",
+                                  informative: "Its songs stay as they are until you choose it, or a folder it is in.",
+                                  on: window)
+            return []
+        }
+        let opened = [path] + others.filter { $0 == chosen || $0.hasPrefix(prefix) }
+        for folder in opened {
+            FolderAccess.remember(url, as: folder)
+            do {
+                let found = try await ingest.addFolder(URL(fileURLWithPath: folder))
+                Log.info("folder access: \(folder) open again → \(found) tracks added or updated")
+            } catch {
+                Log.error("folder access: rescanning \(folder) failed: \(error)")
+            }
+        }
+        return opened
     }
 
     private func readdRememberedFolders() async {

@@ -6,6 +6,9 @@ options:
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
+  # Writes OldTunes-Debug.entitlements (not committed): OldTunes.entitlements plus what only Debug
+  # builds get, for the test benches; the script says what and why.
+  postGenCommand: tools/debug-entitlements.sh
 packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
@@ -61,15 +64,19 @@ targets:
         NSAppleMusicUsageDescription: OldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.
         NSAppleEventsUsageDescription: OldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, and to make, rename and delete the playlists you change in OldTunes.
         NSAudioCaptureUsageDescription: OldTunes takes the sound of the iCloud songs it plays from Apple's player, so its volume and Sound Check can set their level, and so a visualizer can move with the music.
-    entitlements:
-      path: OldTunes/App/OldTunes.entitlements
-      properties:
-        com.apple.security.app-sandbox: false
-        com.apple.security.automation.apple-events: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noahtsutsui.oldtunes
         PRODUCT_NAME: OldTunes
+        # The App Sandbox and what OldTunes needs inside it; the file says why for each key.
+        # Hand-written rather than an `entitlements:` block, which XcodeGen would set for every
+        # configuration, and Debug needs its own.
+        CODE_SIGN_ENTITLEMENTS: OldTunes/App/OldTunes.entitlements
+      configs:
+        # The same entitlements plus the test benches' extras (tools/debug-entitlements.sh). Music
+        # scripting must also be checked on a Release build, which reaches less of Music.
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: OldTunes/App/OldTunes-Debug.entitlements
   # The visualizer: Geiss HDR's engine and shaders ported to Swift and Metal, plus the audio
   # analysis that feeds it (docs/VISUALIZER.md). Its own target so it is optimized in every
   # configuration: the engine is numeric Swift, and at -Onone one warp map takes seconds.

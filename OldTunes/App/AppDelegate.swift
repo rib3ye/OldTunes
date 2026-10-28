@@ -25,6 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Pass it with:  open -n --env OLDTUNES_HARNESS=<name> build/dd/Build/Products/Debug/OldTunes.app
         let harness = ProcessInfo.processInfo.environment["OLDTUNES_HARNESS"] ?? ""
         Log.info("launch: harness=\(harness.isEmpty ? "(none)" : harness)")
+        // Where this run keeps its settings and index, and how many settings it found: in the
+        // sandbox that is the container, which nothing outside the app can look into, so this
+        // line is how a first sandboxed launch shows that macOS moved the old ones in.
+        let sandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        let settings = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?
+            .keys.filter { $0.hasPrefix("OldTunes") }.count ?? 0
+        Log.info("launch: \(sandboxed ? "sandboxed" : "not sandboxed"), home \(NSHomeDirectory()), \(settings) OldTunes settings")
         Task { @MainActor in
             switch harness {
             case "authcheck": await AuthCheck.run(); Log.flush(); NSApp.terminate(nil)
@@ -39,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "musictag":  await MusicTagLiveTest.run()
             case "musicadd":  await MusicAddLiveTest.run()
             case "musicplaylists": await MusicPlaylistLiveTest.run()
+            case "musicaccess": await MusicAccessProbe.run()
             default:          await AppAssembly.launch()
             }
         }

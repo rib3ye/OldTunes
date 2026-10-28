@@ -152,11 +152,11 @@ final class MusicScriptingSession {
         return hex.flatMap(MusicPersistentID.bitPattern(fromHex:))
     }
 
-    /// Errors after which nothing more should be sent: OldTunes lost permission, Music stopped
-    /// answering, Music is gone, or it doesn't handle the command at all. Any other error is
-    /// about the one request.
+    /// Errors after which nothing more should be sent: OldTunes lost permission, its sandbox lets
+    /// nothing reach Music, Music stopped answering, Music is gone, or it doesn't handle the
+    /// command at all. Any other error is about the one request.
     static func endsConversation(_ code: Int?) -> Bool {
-        [-1743, -1712, -600, -609, -1708].contains(code)   // -1708: errAEEventNotHandled
+        [-1743, -1742, -1712, -600, -609, -1708].contains(code)   // -1708: errAEEventNotHandled
     }
 
     /// The library track with this persistent ID, matched by `whose persistent ID is "…"`.
@@ -172,12 +172,28 @@ final class MusicScriptingSession {
             throw TagEditError(message: "Music’s library couldn’t be read.")
         }
         try check("Music’s library couldn’t be read")
-        let matches = tracks.filtered(using: NSPredicate(format: "persistentID == %@", hex))
+        let track = firstMatch(in: tracks, NSPredicate(format: "persistentID == %@", hex))
         try check("Music couldn’t look up the song \(hex)")
-        guard let track = matches.first as? SBObject else {
+        guard let track else {
             throw TagEditError(message: "Music has no song with this ID (\(hex)). It may have been removed from the library.")
         }
         return track
+    }
+
+    /// The first of `elements` that matches `predicate` (`whose …`), named the way Music answers
+    /// the lookup (`shared track id 12345 of library playlist id 67 of source id 64`). Swift's
+    /// `filtered(using:)` comes back as an array whose first element ScriptingBridge names
+    /// `item 1 of every track whose …`, and from a sandboxed app Music refuses everything sent to
+    /// an `item` (-10004, errAEPrivilegeError): no access group in its dictionary reaches it
+    /// (RESEARCH.md §3.1). So the filter is applied through Objective-C, which keeps it a lookup
+    /// still to be sent, and `get` sends it. A timeout is reported as itself, not as no match.
+    private func firstMatch(in elements: SBElementArray, _ predicate: NSPredicate) -> SBObject? {
+        (whose(elements, predicate)?.get() as? [Any])?.first as? SBObject
+    }
+
+    /// `elements whose <predicate>`, a lookup not sent yet.
+    private func whose(_ elements: SBElementArray, _ predicate: NSPredicate) -> SBElementArray? {
+        elements.perform(#selector(NSArray.filtered(using:)), with: predicate)?.takeUnretainedValue() as? SBElementArray
     }
 
     /// Music's own library (`source 1`), which holds every playlist.
@@ -193,6 +209,11 @@ final class MusicScriptingSession {
 
     /// The playlist or folder with this persistent ID, matched like songs (`whose persistent ID
     /// is "…"`), never by name.
+    ///
+    /// Addressed as `playlist id 23456 of source 1`: Music would name a folder
+    /// `folder playlist id 23456 of source id 64`, and a source has no folder playlist element in
+    /// its dictionary, so from a sandboxed app Music refuses every event sent to that (-10004).
+    /// So only the playlist's id is looked up, and the playlist then addressed by it.
     func playlist(persistentID: Int64) throws -> SBObject {
         let hex = MusicPersistentID.hex(persistentID)
         _ = errors.take()
@@ -201,10 +222,10 @@ final class MusicScriptingSession {
             try check("Music’s playlists couldn’t be read")
             throw TagEditError(message: "Music’s playlists couldn’t be read.")
         }
-        // `first` sends the lookup, so a timeout is reported as itself, not as a missing playlist.
-        let match = playlists.filtered(using: NSPredicate(format: "persistentID == %@", hex)).first as? SBObject
+        let ids = whose(playlists, NSPredicate(format: "persistentID == %@", hex))?
+            .array(byApplying: NSSelectorFromString("id")) as? [Any]
         try check("Music couldn’t look up the playlist \(hex)")
-        guard let playlist = match else {
+        guard let id = ids?.first, let playlist = playlists.object(withID: id) as? SBObject else {
             throw TagEditError(message: "Music has no playlist with this ID (\(hex)). It may have been deleted already.")
         }
         return playlist
@@ -225,9 +246,10 @@ final class MusicScriptingSession {
         let properties = NSAppleEventDescriptor.record()
         properties.setDescriptor(NSAppleEventDescriptor(string: name), forKeyword: 0x706E_616D)  // pnam
         make.setParam(properties, forKeyword: 0x7072_6474)                                        // prdt
-        guard let made = try send(make, what).paramDescriptor(forKeyword: Self.directObject) else {
+        guard let answer = try send(make, what).paramDescriptor(forKeyword: Self.directObject) else {
             throw TagEditError(message: "\(what): Music didn’t say what it made.")
         }
+        let made = Self.asPlaylist(answer)
         // persistent ID of <what Music made>
         let property = NSAppleEventDescriptor.record()
         property.setDescriptor(NSAppleEventDescriptor(typeCode: 0x7072_6F70), forKeyword: 0x7761_6E74)  // want: prop
@@ -236,12 +258,31 @@ final class MusicScriptingSession {
         property.setDescriptor(NSAppleEventDescriptor(typeCode: 0x7050_4953), forKeyword: 0x7365_6C64)  // seld: pPIS
         let get = Self.coreEvent(0x6765_7464)                                                           // getd
         get.setParam(property.coerce(toDescriptorType: 0x6F62_6A20) ?? property, forKeyword: Self.directObject)  // obj
-        let hex = try send(get, "Music couldn’t read the new playlist’s ID")
-            .paramDescriptor(forKeyword: Self.directObject)?.stringValue
+        let hex: String?
+        do {
+            hex = try send(get, "Music couldn’t read the new playlist’s ID").paramDescriptor(forKeyword: Self.directObject)?.stringValue
+        } catch {
+            Log.error("music scripting: Music answered make with \(answer), read as \(made)")
+            throw error
+        }
         guard let id = hex.flatMap(MusicPersistentID.bitPattern(fromHex:)) else {
             throw TagEditError(message: "Music made “\(name)” but didn’t say which one it is. It appears in a few seconds.")
         }
         return id
+    }
+
+    /// Music's answer to `make`, readdressed as `playlist id 23456 of source id 64`. Music names
+    /// the new playlist by its own class (seen October 28, 2026:
+    /// `folder playlist id 23456 of source id 64`), and a source has no folder playlist element in
+    /// its dictionary, so from a sandboxed app Music refuses every event sent to that (-10004).
+    /// `playlist` is an element of a source and covers every kind (RESEARCH.md §3.1).
+    private static func asPlaylist(_ reference: NSAppleEventDescriptor) -> NSAppleEventDescriptor {
+        guard reference.descriptorType == 0x6F62_6A20,                                     // obj
+              let record = reference.coerce(toDescriptorType: 0x7265_636F) else {          // reco
+            return reference
+        }
+        record.setDescriptor(NSAppleEventDescriptor(typeCode: 0x6350_6C79), forKeyword: 0x7761_6E74)  // want: cPly
+        return record.coerce(toDescriptorType: 0x6F62_6A20) ?? reference
     }
 
     /// '----', the direct object.
@@ -328,14 +369,6 @@ final class MusicScriptingSession {
         return name
     }
 
-    /// Where a file track's file is (inside Music's Media folder, if Music copied it there).
-    func location(of track: SBObject) throws -> URL? {
-        try requireProperty("location", on: track)
-        let url = track.value(forKey: "location") as? URL
-        try check("Music couldn’t read where the song’s file is")
-        return url
-    }
-
     /// Removes one track from Music's library. Only the live hand-off check calls this, to take
     /// its own invented test song back out, and only with Noah's go-ahead.
     func delete(_ track: SBObject) throws {
@@ -408,6 +441,14 @@ final class MusicScriptingSession {
         switch number {
         case -1743:   // errAEEventNotPermitted
             return purpose.deniedReason
+        case -10004:  // errAEPrivilegeError
+            // What Music answers a sandboxed app for an event its access groups don't reach
+            // (RESEARCH.md §3.1). No setting fixes that, so it is an OldTunes bug, never the
+            // user's to solve.
+            Log.error("music scripting: Music refused “\(what)” (-10004): an event outside OldTunes's access group")
+            return "\(what): Music refused this request (error -10004)."
+        case -1742:   // errAETargetAddressNotPermitted: the sandbox let nothing reach Music at all
+            return "\(what): this copy of OldTunes isn’t allowed to send anything to Music (error -1742)."
         case -1712:   // errAETimeout
             return "\(what): Music didn’t answer in time. Try again when Music isn’t busy."
         case -1728:   // errAENoSuchObject
