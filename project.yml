@@ -9,6 +9,8 @@ options:
   # Writes OldTunes-Debug.entitlements (not committed): OldTunes.entitlements plus what only Debug
   # builds get, for the test benches; the script says what and why.
   postGenCommand: tools/debug-entitlements.sh
+# Changing a version here changes what the About box must credit: docs/LICENSES.md says what to
+# update.
 packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
@@ -33,10 +35,17 @@ targets:
     platform: macOS
     sources:
       - path: OldTunes
+        excludes:
+          - App/Licenses
       # Geiss HDR's licence and NOTICE travel inside the app, as Apache-2.0 §4(a) and (d) ask.
       - path: VisualizerCore/LICENSE.txt
         buildPhase: resources
       - path: VisualizerCore/NOTICE.txt
+        buildPhase: resources
+      # Every other library's licence, as one folder: Contents/Resources/Licenses. Credits.html
+      # names each file; docs/LICENSES.md says where each came from.
+      - path: OldTunes/App/Licenses
+        type: folder
         buildPhase: resources
     dependencies:
       - package: GRDB

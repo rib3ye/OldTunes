@@ -192,6 +192,8 @@ runs on it.
 
 - `docs/RESEARCH.md` — the spec: every API decision, measured on this Mac, plus the
   pixel-sampled iTunes 4.9 colors and metrics.
+- `docs/LICENSES.md` — the open-source libraries inside OldTunes, their licences, where the
+  licence texts in the app come from, and what to update when a package version changes.
 - `tools/make-app-icon.swift` — draws the app icon (the iTunes 7–9 disc and note, 2006–2010,
   on a dark grey tile) into `OldTunes/App/Assets.xcassets`. The tile keeps macOS 26 and later
   from shrinking the icon onto a light gray one. After changing it, run
