@@ -25,12 +25,15 @@ Both MD5s give the same digests (the RFC 1321 test vectors, and 2,000 random mes
 against CommonCrypto), and the old and new encoders write byte-identical `.ape` files.
 
 RSA's licence asks that this MD5 be named "derived from the RSA Data Security, Inc. MD5
-Message-Digest Algorithm" wherever the credits mention it.
+Message-Digest Algorithm" wherever it is mentioned. The About box says so, and the app carries
+the notice as `Licenses/RSA-MD5.txt` (`docs/LICENSES.md`).
 
 **When to remove it.** Once SFBAudioEngine resolves a CXXMonkeysAudio release built from Monkey's
 Audio 12.74 or later: delete this folder and the `CXXMonkeysAudio` entry under `packages:` in
-`project.yml`. To see which MD5 the newest CXXMonkeysAudio ships, on your Mac, from any directory
-(a GPL one starts with a box of asterisks and says "GNU General Public License"):
+`project.yml`, and update the Monkey's Audio version in `Credits.html` and `docs/LICENSES.md`.
+Keep `RSA-MD5.txt`: the new MD5 still needs its notice. To see which MD5 the newest
+CXXMonkeysAudio ships, on your Mac, from any directory (a GPL one starts with a box of asterisks
+and says "GNU General Public License"):
 
 ```bash
 curl -s https://raw.githubusercontent.com/sbooth/CXXMonkeysAudio/main/Sources/MAC/MACLib/MD5.cpp | head -8

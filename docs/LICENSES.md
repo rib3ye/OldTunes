@@ -17,7 +17,7 @@ files sit in `OldTunes/App/Licenses/`, which `project.yml` copies whole into the
 | dsd2pcm (Sebastian Gesemann), inside SFBAudioEngine | — | Built in | BSD-2-Clause-Views |
 | AVFAudioExtensions, CXXAudioRingBuffer, CXXDispatchSemaphore, CXXMessageQueue, CXXQueue, CXXUnfairLock | 0.5.1, 0.2.0, 0.4.1, 0.2.2, 0.1.1, 0.3.1 | Built in | MIT |
 | TagLib (CXXTagLib) | 2.3.2 | Built in | MPL-1.1 (TagLib is LGPL-2.1 or MPL-1.1; OldTunes uses MPL) |
-| Monkey's Audio SDK (CXXMonkeysAudio) | 12.13 | Built in | BSD-3-Clause, but see "Open question" |
+| Monkey's Audio SDK (CXXMonkeysAudio, from `Vendor/`) | 12.13, with 13.43's MD5 | Built in | BSD-3-Clause; the MD5 is under RSA's MD5 licence (see "Monkey's Audio's MD5") |
 | DUMB (CDUMB, kode54's fork) | 2.0.3 | Built in | DUMB licence (zlib-style); its LPC code is Xiph BSD plus the Degener/Bormann notice |
 | Speex and SpeexDSP (CSpeex) | 1.2.1 | Built in | BSD-3-Clause |
 | FLAC | 1.5.0 | `Contents/Frameworks/FLAC.framework` | BSD-3-Clause |
@@ -40,7 +40,8 @@ builds, so its commit `03caaf2` (13 Feb 2026) has the exact source.
 ## Where each file comes from
 
 Package paths are inside the package's checkout, which a build puts in
-`build/dd/SourcePackages/checkouts/<package>/`. "Verbatim" means byte for byte.
+`build/dd/SourcePackages/checkouts/<package>/`; CXXMonkeysAudio's is `Vendor/CXXMonkeysAudio/`.
+"Verbatim" means byte for byte.
 
 | File | Bytes | SHA-256 | Source |
 |---|---|---|---|
@@ -56,6 +57,7 @@ Package paths are inside the package's checkout, which a build puts in
 | CXXUnfairLock.txt | 1078 | `2f3e627b153e01eb7bd477563077987c422e232964ab89024bbd0a361f72e77a` | CXXUnfairLock 0.3.1 `LICENSE.txt`, verbatim |
 | TagLib.txt | 25755 | `53692a2ed6c6a2c6ec9b32dd0b820dfae91e0a1fcdf625ca9ed0bdf8705fcc4f` | CXXTagLib 2.3.2 `LICENSE.txt` (MPL 1.1), verbatim |
 | MonkeysAudio.txt | 1537 | `8cb551f3dbe81085540a95c673400fbe2fe335b2f61f3d4ae4c778f6b0a8fd18` | CXXMonkeysAudio 12.13.0 `LICENSE.txt`, verbatim |
+| RSA-MD5.txt | 1160 | `7e1f2dff2c874d91b694e052c66635f93c1ba4da22a11d3efb5bcd3786b5f7cf` | The notice atop `Vendor/CXXMonkeysAudio/Sources/MAC/MACLib/MD5.cpp` (Monkey's Audio SDK 13.43's), lines 2–24 without the comment's asterisks, after a line saying where it's from |
 | DUMB.txt | 4684 | `8ab37725c26659c9042ced0786904e663c4268a5af3b3f51a1610646444085e0` | CDUMB 2.0.3 `LICENSE.txt`, verbatim |
 | Speex.txt | 1773 | `2654a4264b2bfe298dedc508748d140111840c315cc8eb646a3a68c13fa75b01` | CSpeex 1.2.1 `LICENSE.txt`, verbatim |
 | FLAC.txt | 1509 | `7866ee98760fc1f0156b4fe6bf530257e02be487ab3fd94e2b63799dd32d6b2c` | AudioXCFrameworks `03caaf2` `flac/flac-src/COPYING.Xiph` (FLAC 1.5.0's own), verbatim. The package's `LICENSE.txt` is older: it says 2011–2023 where FLAC 1.5.0 says 2011–2025 |
@@ -87,6 +89,9 @@ Package paths are inside the package's checkout, which a build puts in
 3. Update the versions and copyright lines in `Credits.html`, and the tables here.
 4. Check a Release build: `Contents/Resources/Licenses` holds the files, and the About box shows
    the credits.
+5. CXXMonkeysAudio comes from `Vendor/`, so a new SFBAudioEngine doesn't change it and
+   `Package.resolved` doesn't list it. On every SFBAudioEngine bump, read `Vendor/README.md` ▸
+   When to remove it.
 
 ## Checked (2026-10-28)
 
@@ -113,10 +118,12 @@ Package paths are inside the package's checkout, which a build puts in
 - The About box says where the LGPL libraries' source code is, and where TagLib's is (MPL 1.1
   §3.6 asks for that too).
 
-## Open question
+## Monkey's Audio's MD5
 
-Monkey's Audio SDK says it is BSD-licensed, but one of its files, `MACLib/MD5.cpp` in
-CXXMonkeysAudio 12.13.0, carries a GPL-2.0-or-later header ("derived from the RSA Data
-Security, Inc. MD5 Message-Digest Algorithm"). It is built in: the symbols `APE::MD5Update` and
-`APE::MD5Final` are in release v0.1.0-18's binary. Crediting it does not settle the GPL. Noah
-has not decided what to do (2026-10-28).
+The Monkey's Audio SDK is BSD-licensed, but `MACLib/MD5.cpp` in CXXMonkeysAudio 12.13.0 carries a
+GPL-2.0-or-later header: it is dietlibc's MD5, by Frank Klemm. SFBAudioEngine's Monkey's Audio
+encoder calls it, and the linker always keeps that encoder, so it was built into OldTunes even
+though OldTunes never encodes. Monkey's Audio replaced the file in 12.74 (April 27, 2026). Until
+CXXMonkeysAudio catches up, OldTunes builds that package from `Vendor/CXXMonkeysAudio`, with SDK
+13.43's MD5 under RSA's MD5 licence (`RSA-MD5.txt`). `Vendor/README.md` has the details and says
+when to remove it. Releases built before that change still contain the GPL code.
