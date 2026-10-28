@@ -11,7 +11,8 @@
 #   - Music's playback access group, for the A/B bench (AudioABBench), which plays songs in Music
 #     to compare. OldTunes itself never sends Music a playback command, so a release build can't.
 #     Because Debug reaches more of Music than a release build, check Music scripting on a
-#     Release build too (OLDTUNES_HARNESS=musicaccess, and the live checks).
+#     Bench build too (OLDTUNES_HARNESS=musicaccess, and the live checks): Release's entitlements
+#     with the benches, which Release builds leave out (project.yml).
 # Release builds, which ship and which the Mac App Store would review, sign with
 # OldTunes.entitlements alone. XcodeGen runs this after every `xcodegen generate`
 # (project.yml ▸ options ▸ postGenCommand).

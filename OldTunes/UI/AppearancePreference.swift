@@ -32,14 +32,13 @@ enum AppearancePreference {
     /// What is applied right now: the saved choice, a Settings preview, or a launch override.
     private(set) static var current: AppearanceMode = .system
 
-    /// Before any window exists. OLDTUNES_APPEARANCE=light|dark|system sets this launch's
-    /// appearance without saving it. Test benches start in Light whatever is saved, because their
-    /// pixel checks compare against the 2005 measurements (§7.1); pass OLDTUNES_APPEARANCE=dark
-    /// to run one in the dark.
+    /// Before any window exists. In Debug and Bench builds (LaunchEnvironment),
+    /// OLDTUNES_APPEARANCE=light|dark|system sets this launch's appearance without saving it. Test
+    /// benches start in Light whatever is saved, because their pixel checks compare against the
+    /// 2005 measurements (§7.1); pass OLDTUNES_APPEARANCE=dark to run one in the dark.
     static func applyAtLaunch() {
-        let env = ProcessInfo.processInfo.environment
-        let override = env["OLDTUNES_APPEARANCE"].flatMap(AppearanceMode.init(rawValue:))
-        let isHarness = !(env["OLDTUNES_HARNESS"] ?? "").isEmpty
+        let override = LaunchEnvironment.value("OLDTUNES_APPEARANCE").flatMap(AppearanceMode.init(rawValue:))
+        let isHarness = LaunchEnvironment.bench != nil
         apply(override ?? (isHarness ? .light : saved))
         // Under Match System the system can change the look at any moment (a click in System
         // Settings, or Auto at sunset); AppKit redraws, this catches cached art too.

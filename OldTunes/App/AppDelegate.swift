@@ -22,11 +22,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Light, Dark (Graphite) or Match System, from Settings, before any window exists.
         AppearancePreference.applyAtLaunch()
         NSApp.mainMenu = MainMenu.make()
+        #if BENCHES
         Snapshot.scheduleFromEnvironment()
+        #endif
 
         // OLDTUNES_HARNESS launches straight into one module's test bench (see each *Harness.swift).
         // Pass it with:  open -n --env OLDTUNES_HARNESS=<name> build/dd/Build/Products/Debug/OldTunes.app
-        let harness = ProcessInfo.processInfo.environment["OLDTUNES_HARNESS"] ?? ""
+        // Only Debug and Bench builds have the benches (LaunchEnvironment).
+        let harness = LaunchEnvironment.bench ?? ""
         Log.info("launch: harness=\(harness.isEmpty ? "(none)" : harness)")
         // Where this run keeps its settings and index, and how many settings it found: in the
         // sandbox that is the container, which nothing outside the app can look into, so this
@@ -39,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.info("cloud: RemotePlayerService running before OldTunes started, so not ours: \(notOurs)")
         }
         Task { @MainActor in
+            #if BENCHES
             switch harness {
             case "authcheck": await AuthCheck.run(); Log.flush(); NSApp.terminate(nil)
             case "library":   await LibraryHarness.run()
@@ -55,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "musicaccess": await MusicAccessProbe.run()
             default:          await AppAssembly.launch()
             }
+            #else
+            await AppAssembly.launch()
+            #endif
         }
     }
 

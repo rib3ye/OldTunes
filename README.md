@@ -211,6 +211,11 @@ runs on it.
   index somewhere else. Test benches run in Light; `OLDTUNES_APPEARANCE=dark` runs one in the
   dark without changing the saved setting.
 
+  Only Debug and Bench builds have the benches and read these variables. Release builds, the
+  ones that ship, leave the bench files out (`project.yml` lists them) and ignore the variables.
+  For a bench that must run on a release build, such as `musicaccess` and the live checks,
+  build with `-configuration Bench`: Release's optimizer and entitlements, plus the benches.
+
   OldTunes runs in the App Sandbox, so a bench can read and write only its container and, in a
   Debug build, `/private/tmp` (`/tmp` is the same folder) and `~/Library/Logs/OldTunes`
   (`tools/debug-entitlements.sh`). Put every path you pass a bench, such as the index,

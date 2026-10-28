@@ -109,6 +109,14 @@ if [[ "$entitlements" != *"<key>com.apple.security.app-sandbox</key><true/>"* ||
   echo "$entitlements" >&2
   exit 1
 fi
+# No test bench code, which Release builds leave out (project.yml), and no private call. Bench types
+# keep their names in the binary, so a bench file that slipped through shows up here.
+leaked=$(strings -a "$app/Contents/MacOS/OldTunes" | grep -E 'Harness|LiveTest|SmokeTest|responsibility_get_pid' | sort -u | head -5 || true)
+if [[ -n "$leaked" ]]; then
+  echo "$0: the app carries test bench code or a private call; project.yml must leave its file out of Release:" >&2
+  echo "$leaked" >&2
+  exit 1
+fi
 # The list of what macOS moves into the container the first time a sandboxed OldTunes opens. It
 # only ever runs that once, so a release without it would leave people's settings behind.
 migration="$app/Contents/Resources/container-migration.plist"

@@ -291,7 +291,8 @@ read-only (the metadata bench runs `lame`), and Music's `playback` access group 
 plays songs in Music). Release builds never carry them; `tools/release.sh` refuses a build that
 does. The App Store rarely accepts temporary exceptions, and OldTunes itself never sends Music a
 playback command. Because Debug reaches more of Music than a release build, Music scripting
-needs checking on a Release build too.
+needs checking on a Bench build too: Release's optimizer and entitlements, plus the benches,
+which Release builds leave out (`project.yml`).
 
 **A release build's log** is in its container,
 `~/Library/Containers/com.noahtsutsui.oldtunes/Data/Library/Logs/OldTunes/oldtunes.log`, which

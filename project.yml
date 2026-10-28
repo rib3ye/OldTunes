@@ -9,6 +9,13 @@ options:
   # Writes OldTunes-Debug.entitlements (not committed): OldTunes.entitlements plus what only Debug
   # builds get, for the test benches; the script says what and why.
   postGenCommand: tools/debug-entitlements.sh
+# Debug and Bench builds carry the test benches (OLDTUNES_HARNESS, README ▸ Test benches); Release,
+# the build that ships, leaves them out. Bench is Release plus the benches: the same optimizer and
+# entitlements as what ships, for checks that must run on a release build.
+configs:
+  Debug: debug
+  Bench: release
+  Release: release
 # Changing a version here changes what the About box must credit: docs/LICENSES.md says what to
 # update.
 packages:
@@ -88,9 +95,28 @@ targets:
         CODE_SIGN_ENTITLEMENTS: OldTunes/App/OldTunes.entitlements
       configs:
         # The same entitlements plus the test benches' extras (tools/debug-entitlements.sh). Music
-        # scripting must also be checked on a Release build, which reaches less of Music.
+        # scripting must also be checked on a Bench build, which reaches less of Music.
         Debug:
           CODE_SIGN_ENTITLEMENTS: OldTunes/App/OldTunes-Debug.entitlements
+          # Compiles the benches' launch code in (LaunchEnvironment, AppDelegate).
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) BENCHES"
+        Bench:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) BENCHES"
+        # The test benches' files, left out of the build that ships. A new bench's file must match
+        # one of these names, or it ships too; tools/release.sh refuses a build that has one.
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES:
+            - "*Harness*.swift"
+            - "*Bench*.swift"
+            - "*LiveTest.swift"
+            - "VisualizerFixtures*.swift"
+            - SmokeTest.swift
+            - AuthCheck.swift
+            - MusicAccessProbe.swift
+            - AudioProcessProbe.swift
+            - CloudEndProbe.swift
+            - StressLibrary.swift
+            - Snapshot.swift
   # The visualizer: Geiss HDR's engine and shaders ported to Swift and Metal, plus the audio
   # analysis that feeds it (docs/VISUALIZER.md). Its own target so it is optimized in every
   # configuration: the engine is numeric Swift, and at -Onone one warp map takes seconds.

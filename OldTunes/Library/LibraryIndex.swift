@@ -10,9 +10,10 @@ final class LibraryIndex: LibraryReading, LibraryWriting, Sendable {
     let pool: DatabasePool
     let url: URL
 
-    /// Default path ~/Library/Application Support/OldTunes/index.sqlite; env OLDTUNES_DB_PATH overrides.
+    /// Default path ~/Library/Application Support/OldTunes/index.sqlite; env OLDTUNES_DB_PATH overrides
+    /// in Debug and Bench builds (LaunchEnvironment).
     init(path: URL? = nil) throws {
-        let env = ProcessInfo.processInfo.environment["OLDTUNES_DB_PATH"].flatMap { $0.isEmpty ? nil : $0 }
+        let env = LaunchEnvironment.value("OLDTUNES_DB_PATH")
         let url = path ?? env.map { URL(fileURLWithPath: $0) } ?? Self.defaultURL
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 

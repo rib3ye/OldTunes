@@ -15,7 +15,7 @@ enum AppAssembly {
             Log.error("launch failed: \(error)")
             // A test bench quits at once, rather than waiting for a click on an alert no one sees
             // (for example an OLDTUNES_DB_PATH the sandbox won't open).
-            if !(ProcessInfo.processInfo.environment["OLDTUNES_HARNESS"] ?? "").isEmpty {
+            if LaunchEnvironment.bench != nil {
                 Log.flush()
                 NSApp.terminate(nil)
                 return
@@ -28,9 +28,11 @@ enum AppAssembly {
         }
         let controller = AppController(index: opened.index, rebuiltIndex: opened.rebuilt)
         self.controller = controller
+        #if BENCHES
         if smokeTest {
             controller.onFirstIngest = { report in Task { await SmokeTest(app: controller).run(report) } }
         }
+        #endif
         controller.start()
     }
 
@@ -60,7 +62,7 @@ enum AppAssembly {
         // OldTunes's first launch finds its index here only if macOS moved the old one into the
         // container (container-migration.plist). Not for a bench's own index (OLDTUNES_DB_PATH),
         // which must stay free of the user's folders.
-        let fresh = (ProcessInfo.processInfo.environment["OLDTUNES_DB_PATH"] ?? "").isEmpty
+        let fresh = LaunchEnvironment.value("OLDTUNES_DB_PATH") == nil
             && !FileManager.default.fileExists(atPath: url.path)
         do {
             return (try LibraryIndex(), fresh)
@@ -87,8 +89,7 @@ enum AppAssembly {
 
     /// Same resolution as LibraryIndex.init: OLDTUNES_DB_PATH, else the default.
     private static var indexURL: URL {
-        let env = ProcessInfo.processInfo.environment["OLDTUNES_DB_PATH"].flatMap { $0.isEmpty ? nil : $0 }
-        return env.map { URL(fileURLWithPath: $0) } ?? LibraryIndex.defaultURL
+        LaunchEnvironment.value("OLDTUNES_DB_PATH").map { URL(fileURLWithPath: $0) } ?? LibraryIndex.defaultURL
     }
 
     /// Keeps only the newest damaged copy, for diagnosis.

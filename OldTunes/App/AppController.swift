@@ -435,7 +435,7 @@ final class AppController: NSObject {
     }
 
     /// A test bench runs by itself, so it never stops for a question no one will answer.
-    private var isTestBench: Bool { !(ProcessInfo.processInfo.environment["OLDTUNES_HARNESS"] ?? "").isEmpty }
+    private var isTestBench: Bool { LaunchEnvironment.bench != nil }
 
     /// Added folders the sandbox keeps shut, most likely added before OldTunes was sandboxed.
     /// Outside ~/Music their songs show as missing; inside it they play, but Get Info can't save
