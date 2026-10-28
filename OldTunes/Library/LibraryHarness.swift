@@ -98,6 +98,7 @@ final class LibraryHarnessBench {
             await checkCancelledReadsAreCancellation()
             try await checkFTSIntegrity()
             try await checkScale()
+            try await checkEmptyMusicLibrary()
         } catch {
             fail("harness step threw", "\(error)")
         }

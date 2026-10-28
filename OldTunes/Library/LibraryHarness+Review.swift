@@ -6,6 +6,7 @@ import GRDB
 /// - 4: a playlist never came out in its own order.
 /// - 14, part 3: cancelling a read surfaced as "SQLite error 9: interrupted" instead of a cancellation.
 /// - The checkbox: starts from Music's own state, and OldTunes' own choice survives re-ingest.
+/// - From the App Store review (2026-10-28): an empty Music library read as no permission.
 extension LibraryHarnessBench {
     // MARK: - Finding 2: "Part of a compilation"
 
@@ -319,5 +320,47 @@ extension LibraryHarnessBench {
               interrupted.isEmpty && other.isEmpty && cancelled > 0,
               "240 reads cancelled 0-4.9 ms in: \(finished) finished first, \(cancelled) CancellationError, " +
               "\(interrupted.count) interrupted, \(other.count) other\((interrupted.first ?? other.first).map { "; first: \($0)" } ?? "")")
+    }
+
+    // MARK: - An empty Music library
+
+    /// iTunesLibrary finds no items both when it may not read the library and when the library is
+    /// empty (§3.6), and OldTunes said "can't see your music library" for either. Only MusicKit
+    /// finding no songs now counts as empty. Written to the index, an empty library takes the Music
+    /// rows and playlists and leaves the folder rows, and the next real read brings everything back.
+    /// Runs last: the rows it brings back have new ids.
+    func checkEmptyMusicLibrary() async throws {
+        func musicKit(_ songs: Int) -> MusicKitSource.Library {
+            MusicKitSource.Library(songs: [:], returned: songs, requestSeconds: 0, keySeconds: 0)
+        }
+        check("only MusicKit finding no songs confirms an empty Music library",
+              LibraryIngest.confirmsEmptyLibrary(.success(musicKit(0)))
+                  && !LibraryIngest.confirmsEmptyLibrary(.success(musicKit(1)))
+                  && !LibraryIngest.confirmsEmptyLibrary(.failure(CancellationError())),
+              "zero songs, one song, a failed request")
+
+        func counts() async throws -> (music: Int, folder: Int, playlists: Int) {
+            try await index.pool.read { db in
+                (try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM song WHERE origin = 0") ?? 0,
+                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM song WHERE origin = 1") ?? 0,
+                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM playlist") ?? 0)
+            }
+        }
+        let before = try await counts()
+        let write = try await index.replaceMusicLibrary([], playlists: [])
+        let emptied = try await counts()
+        check("an empty Music library written to the index takes every Music row and playlist and no folder row",
+              before.music > 0 && write.deleted == before.music && emptied.music == 0 && emptied.playlists == 0
+                  && emptied.folder == before.folder,
+              "Music rows \(before.music) → \(emptied.music) (deleted \(write.deleted)), playlists \(before.playlists) → " +
+              "\(emptied.playlists), folder rows \(before.folder) → \(emptied.folder)")
+
+        let report = await ingest.refresh()
+        logReport("refresh after the empty library", report)
+        let restored = try await counts()
+        check("…and the next real read brings every row and playlist back",
+              report.status == .ok && restored.music == before.music && restored.playlists == before.playlists
+                  && restored.folder == before.folder,
+              "Music rows \(restored.music), playlists \(restored.playlists), folder rows \(restored.folder)")
     }
 }

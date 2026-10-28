@@ -9,7 +9,8 @@ import iTunesLibrary
 /// double-click.
 actor ITLibSource {
     enum LoadError: LocalizedError {
-        /// The framework's own permission lie (§3.6): init succeeds, the library is empty.
+        /// The framework's own permission lie (§3.6): init succeeds, the library is empty. A Music
+        /// library that really is empty looks the same, so `LibraryIngest` asks MusicKit which it is.
         case emptyLibrary
         case unavailable(String)
 
@@ -39,11 +40,13 @@ actor ITLibSource {
     /// Kept so artwork reads need no reload. The items are only touched on this actor.
     private var itemsByPID: [Int64: ITLibMediaItem] = [:]
 
-    func load() throws -> Snapshot {
+    /// Throws `emptyLibrary` when the read finds no items, unless `acceptingEmpty`: `LibraryIngest`
+    /// passes that once MusicKit has confirmed the library really is empty.
+    func load(acceptingEmpty: Bool = false) throws -> Snapshot {
         let started = Date()
         let library = try openLibrary()
         let items = library.allMediaItems
-        guard !items.isEmpty else { throw LoadError.emptyLibrary }
+        guard acceptingEmpty || !items.isEmpty else { throw LoadError.emptyLibrary }
         let loaded = Date()
 
         let songs = items.filter { $0.mediaKind == .kindSong }
