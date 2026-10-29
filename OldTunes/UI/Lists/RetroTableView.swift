@@ -9,6 +9,9 @@ final class RetroTableView: NSTableView {
     var onDelete: (() -> Void)?
     /// ⌘I while this table is focused.
     var onCommandI: (() -> Void)?
+    /// ← or → (`right`), alone or with ⌥ (`option`). Return true when used; otherwise the key goes
+    /// on up the responder chain, where the window plays the previous or next song (ArrowCommand).
+    var onLeftRight: ((_ right: Bool, _ option: Bool) -> Bool)?
     /// Clicks that should not reach NSTableView (the source list's disclosure triangles).
     /// Return true when handled.
     var interceptMouseDown: ((NSEvent) -> Bool)?
@@ -74,6 +77,10 @@ final class RetroTableView: NSTableView {
             onReturn?()
         case 51, 117:   // Delete, Forward Delete
             if let onDelete { onDelete() } else { super.keyDown(with: event) }
+        case 123, 124:   // ←, →
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if modifiers.isSubset(of: .option), onLeftRight?(event.keyCode == 124, modifiers == .option) == true { return }
+            super.keyDown(with: event)
         default:
             super.keyDown(with: event)
         }

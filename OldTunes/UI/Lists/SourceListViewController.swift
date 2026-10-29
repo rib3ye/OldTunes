@@ -9,7 +9,8 @@ import AppKit
 ///
 /// Right-clicking offers the playlist commands (New Playlist, New Playlist Folder, Rename,
 /// Duplicate, Delete); Return renames the selected playlist and Delete deletes it. The source
-/// list only asks for each one: AppController makes the change through Music.
+/// list only asks for each one: AppController makes the change through Music. → and ← open and
+/// close folders, as in a Finder list.
 @MainActor
 final class SourceListViewController: NSViewController {
 
@@ -227,6 +228,7 @@ final class SourceListViewController: NSViewController {
         table.interceptMouseDown = { [weak self] event in self?.handleDisclosureClick(event) ?? false }
         table.onReturn = { [weak self] in self?.renameSelection() }
         table.onDelete = { [weak self] in self?.deleteSelection() }
+        table.onLeftRight = { [weak self] right, all in self?.folderArrow(right: right, all: all) ?? false }
         let menu = NSMenu(title: "Source")
         menu.delegate = self
         menu.autoenablesItems = false
@@ -369,6 +371,34 @@ final class SourceListViewController: NSViewController {
     private func folderLikeID(_ row: Int) -> Int64? {
         if case .playlist(let p) = rows[row].kind { return p.id }
         return nil
+    }
+
+    /// → opens the selected folder and ← closes it; with ⌥, every folder inside it too. ← on a
+    /// playlist inside a folder selects the folder. A folder keeps both arrows even when there is
+    /// nothing to open or close, so pressing one twice never skips the song playing. Any other row
+    /// lets them go on to the window, which plays the previous or next song (or album), as iTunes
+    /// 4.9's flat source list did.
+    private func folderArrow(right: Bool, all: Bool) -> Bool {
+        let row = table.selectedRow
+        guard row >= 0, row < rows.count else { return false }
+        let r = rows[row]
+        if r.hasChildren, let id = r.folderID ?? folderLikeID(row) {
+            if all {
+                let folders = Set(playlists.filter { $0.kind == .folder }.map(\.id)).union(playlists.compactMap(\.parentID))
+                let inside = subtree(of: id).intersection(folders)
+                if right { expanded.formUnion(inside) } else { expanded.subtract(inside) }
+                saveExpanded()
+                rebuildRows()
+            } else if r.isExpanded != right {
+                setExpanded(id, right)
+            }
+            return true
+        }
+        guard !right, !all, r.depth > 0, let parent = r.playlist?.parentID,
+              let parentRow = rows.firstIndex(where: { $0.scope == .playlist(parent) }) else { return false }
+        table.selectRowIndexes(IndexSet(integer: parentRow), byExtendingSelection: false)
+        table.scrollRowToVisible(parentRow)
+        return true
     }
 
     // MARK: Playlist commands

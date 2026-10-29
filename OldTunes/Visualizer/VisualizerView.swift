@@ -141,6 +141,7 @@ final class VisualizerView: NSView {
         0  reset                   ⌃H  HDR on or off
         ⇧F  freeze                 H  this list
         Space  play or pause       Esc  leave full screen
+        ← →  previous, next song   ↑ ↓  volume
         """
 
     private func layoutOverlays() {

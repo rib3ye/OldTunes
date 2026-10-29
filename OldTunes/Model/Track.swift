@@ -110,6 +110,16 @@ extension Track {
 
     /// Album-level artist for grouping, falling back to the track artist.
     var effectiveAlbumArtist: String { albumArtist.isEmpty ? artist : albumArtist }
+
+    /// Whether two songs are on one album, for ⌥← and ⌥→. Music's album id decides when both songs
+    /// have one. Folder songs have none, so they go by album name and album artist; a compilation's
+    /// songs, whose artists differ, by the name alone.
+    func isOnSameAlbum(as other: Track) -> Bool {
+        if albumPID != 0, other.albumPID != 0 { return albumPID == other.albumPID }
+        guard album.caseInsensitiveCompare(other.album) == .orderedSame else { return false }
+        return (isCompilation && other.isCompilation)
+            || effectiveAlbumArtist.caseInsensitiveCompare(other.effectiveAlbumArtist) == .orderedSame
+    }
 }
 
 /// Columns the user can click to sort. The four the user asked for come first. Raw values are

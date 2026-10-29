@@ -28,6 +28,9 @@ final class VisualizerController: NSObject {
     var onFrame: (() -> Void)? {
         didSet { renderLoop?.onFrame = onFrame }
     }
+    /// A key the visualizer has no use for, such as an arrow: AppController plays the previous or
+    /// next song, or changes the volume, as iTunes 4's visualizer did. Return true when used.
+    var onUnusedKey: ((NSEvent) -> Bool)?
 
     let ring = SampleRing()
     private let player: PlaybackCoordinator
@@ -136,13 +139,14 @@ final class VisualizerController: NSObject {
 
     /// The visualizer's own keys: H for the key list here, the rest to the engine. Esc goes to the engine
     /// first (it unfreezes); when there is nothing to unfreeze, the view uses it to leave full screen.
+    /// Keys the engine doesn't use go to `onUnusedKey`.
     private func handleKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if event.charactersIgnoringModifiers?.lowercased() == "h", modifiers.subtracting(.shift).isEmpty {
             view?.toggleKeyList()
             return true
         }
-        guard let renderLoop, let command = VisualizerCommand(event: event) else { return false }
+        guard let renderLoop, let command = VisualizerCommand(event: event) else { return onUnusedKey?(event) ?? false }
         let feedback = renderLoop.handle(command)
         if let message = feedback.message { view?.showToast(message) }
         return feedback.handled

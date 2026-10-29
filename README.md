@@ -130,6 +130,12 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 | Return, or double-click | Play the selected song |
 | ⌘→ / ⌘← | Next / previous song (⌘← first goes back to the start if the song has played for more than 3 seconds) |
 | ⌘↑ / ⌘↓ | Volume up / down |
+| → / ← | Next / previous song, like ⌘→ / ⌘←, while a song is on (not while you're typing) |
+| ⌥→ / ⌥← | Next / previous album |
+| ⌥⌘→ / ⌥⌘← | 5 seconds ahead / back in the song |
+| ⌥⌘↓ | Mute, and again to unmute |
+| ↑ / ↓, in the visualizer | Volume up / down |
+| → / ←, on a playlist folder | Open / close it (with ⌥, every folder inside it too) |
 | ⌘F | Search |
 | ⌘I | Get Info |
 | ⌘B | Show or hide Browse |
