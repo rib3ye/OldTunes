@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Writes OldTunes/App/OldTunes-Debug.entitlements, which is not committed: OldTunes.entitlements
-# plus four things only Debug builds get, for the test benches (README ▸ Test benches):
+# plus four things only Debug builds get, for the benches (docs/DEVELOPMENT.md ▸ Test benches):
 #   - /private/tmp/, where benches keep their index, fixtures, snapshots and evidence
 #     (OLDTUNES_DB_PATH and the rest). Sandboxed, an app may touch only its own container, and
 #     no other process can read that container, so bench files have to live outside it.

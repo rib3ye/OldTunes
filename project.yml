@@ -9,9 +9,9 @@ options:
   # Writes OldTunes-Debug.entitlements (not committed): OldTunes.entitlements plus what only Debug
   # builds get, for the test benches; the script says what and why.
   postGenCommand: tools/debug-entitlements.sh
-# Debug and Bench builds carry the test benches (OLDTUNES_HARNESS, README ▸ Test benches); Release,
-# the build that ships, leaves them out. Bench is Release plus the benches: the same optimizer and
-# entitlements as what ships, for checks that must run on a release build.
+# Debug and Bench builds carry the test benches (OLDTUNES_HARNESS, docs/DEVELOPMENT.md ▸ Test
+# benches); Release, the build that ships, leaves them out. Bench is Release plus the benches: the
+# same optimizer and entitlements as what ships, for checks that must run on a release build.
 configs:
   Debug: debug
   Bench: release

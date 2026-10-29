@@ -1,7 +1,7 @@
 # Every push to main (a merged pull request) builds OldTunes on Noah's Mac and publishes it as a
 # GitHub release. The job runs on a self-hosted runner installed on that Mac, so the build uses its
-# Xcode and its Developer ID certificate. tools/release.sh does the work; README ▸ Releases says
-# how the runner is set up.
+# Xcode and its Developer ID certificate. tools/release.sh does the work; docs/DEVELOPMENT.md ▸
+# Releases says how the runner is set up.
 name: Release
 
 on:
