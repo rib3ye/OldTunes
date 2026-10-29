@@ -12,7 +12,9 @@ import VisualizerCore
 /// Exact zeros only: real music that is merely quiet is never mistaken for silence. When the output is
 /// AirPlay it asks for an AirPlay message instead, since that audio may never pass through the tap.
 struct SilenceWatchdog: Equatable {
-    enum Hint: Equatable { case permission, airPlay }
+    /// `stopped` comes from VisualizerAudio, never from the watchdog: SelfCapture was stopped from
+    /// the menu bar and nothing else can listen without asking for the permission.
+    enum Hint: Equatable { case permission, airPlay, stopped }
     enum Advice: Equatable { case none, rebuild, showHint(Hint), clearHint }
 
     static let silenceLimit: TimeInterval = 3
@@ -21,15 +23,25 @@ struct SilenceWatchdog: Equatable {
     static let rebuildSpacing: TimeInterval = 30
 
     private(set) var hint: Hint?
-    private var lastNonZero: UInt64 = 0
+    /// Whether any non-zero sample has arrived since this watchdog was made.
+    private(set) var hasHeard = false
+    private var lastNonZero: UInt64
     private var silentSince: TimeInterval?
     private var rebuiltThisSilence = false
     private var lastRebuild = -TimeInterval.infinity
 
+    /// `baseline`: the ring's non-zero count already there, from other ears, which doesn't count as heard.
+    init(baseline: UInt64 = 0) {
+        lastNonZero = baseline
+    }
+
     /// Call about twice a second. `audible`: a song is playing and its position is moving.
     mutating func observe(now: TimeInterval, audible: Bool, airPlay: Bool, nonZeroFrames: UInt64) -> Advice {
-        let heard = nonZeroFrames > lastNonZero
+        // A count lower than last time is a new ring (its sample rate changed, as when other ears take
+        // over at another rate): everything in it is new.
+        let heard = nonZeroFrames < lastNonZero ? nonZeroFrames > 0 : nonZeroFrames > lastNonZero
         lastNonZero = nonZeroFrames
+        if heard { hasHeard = true }
         if heard {
             silentSince = nil
             rebuiltThisSilence = false
@@ -66,12 +78,12 @@ struct SilenceWatchdog: Equatable {
     }
 }
 
-/// Runs the SilenceWatchdog against the real player and tap, twice a second, while the visualizer
-/// is on: rebuilds the tap when asked and tells the visualizer view when to show or clear the hint.
+/// Runs the SilenceWatchdog against the real player and the ears in use, twice a second, while the
+/// visualizer is on: rebuilds them when asked and says when to show or clear the hint.
 @available(macOS 14.2, *)
 @MainActor
 final class TapWatchdog {
-    private let tap: MusicAudioTap
+    private var tap: any VisualizerEars
     private var player: PlaybackControlling?
     private var watchdog = SilenceWatchdog()
     private var timer: Timer?
@@ -83,14 +95,25 @@ final class TapWatchdog {
     /// For benches: replaces "is a song audibly playing" with a fixed answer.
     var audibleOverride: Bool?
 
-    init(tap: MusicAudioTap, player: PlaybackControlling?) {
+    init(tap: any VisualizerEars, player: PlaybackControlling?) {
         self.tap = tap
         self.player = player
     }
 
+    /// Watches other ears from now on, starting over: what the ring already holds came from the old
+    /// ones. Clears any hint the old ones caused.
+    func watch(_ ears: any VisualizerEars) {
+        tap = ears
+        if watchdog.hint != nil { onHint?(nil) }
+        watchdog = SilenceWatchdog(baseline: ears.ring.stats.nonZeroFrames)
+    }
+
+    /// Whether the ears watched have heard any sound since `watch(_:)` or `start()`.
+    var hasHeard: Bool { watchdog.hasHeard }
+
     func start() {
         guard timer == nil else { return }
-        watchdog = SilenceWatchdog()
+        watchdog = SilenceWatchdog(baseline: tap.ring.stats.nonZeroFrames)
         if let player {
             state = player.state
             observer = player.addObserver { [weak self] in self?.state = $0 }

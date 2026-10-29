@@ -3,6 +3,7 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 import os
+import Security
 
 /// Whether OldTunes has the "System Audio Recording Only" permission, found by trying it, with
 /// public API only. macOS has no call that just reports it (developer.apple.com/forums/thread/756783);
@@ -29,6 +30,43 @@ enum SystemAudioProbe {
         /// The probe couldn't run: no output device, or the engine, tap or aggregate device failed.
         case untested
     }
+
+    /// What the probe found at an earlier launch's first iCloud song, granted or denied; nil if it
+    /// never ran. A guess for whoever needs one before this launch's probe has run: the visualizer,
+    /// which mustn't be what raises the prompt (VisualizerAudio). It can be out of date if the
+    /// permission was changed since.
+    ///
+    /// Kept with the certificate this copy is signed with, and nil for a copy signed with another: a
+    /// Debug build and the installed app share these settings, but macOS keeps the permission per
+    /// signing certificate, and they are signed differently (Apple Development and Developer ID).
+    static var lastAnswer: Answer? {
+        get {
+            guard let saved = UserDefaults.standard.dictionary(forKey: lastAnswerKey),
+                  saved["signer"] as? String == signer else { return nil }
+            return (saved["answer"] as? String).flatMap(Answer.init(rawValue:))
+        }
+        set {
+            let saved = newValue.map { ["answer": $0.rawValue, "signer": signer] }
+            UserDefaults.standard.set(saved, forKey: lastAnswerKey)
+        }
+    }
+    private static let lastAnswerKey = "OldTunes.systemAudioRecording"
+
+    /// The name on this copy's signing certificate ("Developer ID Application: …"), or its path if it
+    /// has none (signed ad hoc).
+    private static let signer: String = {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let certificates = (info as? [String: Any])?[kSecCodeInfoCertificates as String] as? [SecCertificate],
+              let leaf = certificates.first, let name = SecCertificateCopySubjectSummary(leaf) as String? else {
+            return Bundle.main.bundlePath
+        }
+        return name
+    }()
 
     private static let toneHertz = 660.0
     private static let toneSeconds = 0.2

@@ -329,7 +329,7 @@ extension VisualizerHarness {
                     + "\(devices.map { AudioHAL.name($0) ?? "?" }); \(reasons.count - rebuildsAfterStop) rebuilds after stop")
     }
 
-    private struct Levels {
+    struct Levels {
         var frames: UInt64 = 0
         var nonZero: UInt64 = 0
         var rms = 0.0
@@ -342,7 +342,7 @@ extension VisualizerHarness {
 
     /// Ring growth over `seconds`, and the loudest frame the feed made from it.
     @MainActor
-    private static func listen(_ ring: SampleRing, _ feed: AudioFeed, seconds: Int) async -> Levels {
+    static func listen(_ ring: SampleRing, _ feed: AudioFeed, seconds: Int) async -> Levels {
         let before = ring.stats
         var levels = Levels()
         for _ in 0..<(seconds * 10) {
@@ -356,7 +356,7 @@ extension VisualizerHarness {
     }
 
     @MainActor
-    private static func waitUntil(_ seconds: Double, _ condition: @MainActor () -> Bool) async {
+    static func waitUntil(_ seconds: Double, _ condition: @MainActor () -> Bool) async {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition(), Date() < deadline {
             try? await Task.sleep(for: .milliseconds(50))

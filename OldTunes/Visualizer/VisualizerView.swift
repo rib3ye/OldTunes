@@ -112,6 +112,9 @@ final class VisualizerView: NSView {
                 + "under System Audio Recording Only. Click here to open it."
         case .airPlay?:
             hintBox.text = "The visualizer can't hear music playing over AirPlay."
+        case .stopped?:
+            hintBox.text = "The visualizer stopped listening when sharing was stopped from the menu bar.\n"
+                + "Turn the visualizer off and on again to listen again."
         case nil:
             break
         }

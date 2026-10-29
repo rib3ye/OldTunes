@@ -109,7 +109,10 @@ Launch with `open -n --env OLDTUNES_HARNESS=<name> …/OldTunes.app` where
 naming songs and playlists Music answers inside the sandbox; read-only, changes nothing).
 `OLDTUNES_SNAPSHOT=/path.png` renders the window to a PNG; `OLDTUNES_DB_PATH` points the
 index somewhere else. Test benches run in Light; `OLDTUNES_APPEARANCE=dark` runs one in the
-dark without changing the saved setting.
+dark without changing the saved setting. `OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO=1` runs the app as if
+System Audio Recording were off, and `OLDTUNES_VIS_EARS=tap` or `self-capture` picks how the
+visualizer hears in a normal Debug launch; benches always tap (`docs/VISUALIZER.md` ▸ Without the
+permission).
 
 Only Debug and Bench builds have the benches and read these variables. Release builds, the
 ones that ship, leave the bench files out (`project.yml` lists them) and ignore the variables.

@@ -44,6 +44,12 @@ final class AppController: NSObject {
         self.rebuiltIndex = rebuiltIndex
         ingest = LibraryIngest(index: index)
         player = PlaybackCoordinator(library: index, cloud: ingest)
+        // Debug and Bench builds: play as if System Audio Recording were off, without changing it in
+        // System Settings. iCloud songs then play at their own level, and the visualizer listens
+        // through SelfCapture (docs/VISUALIZER.md ▸ Without the permission).
+        if LaunchEnvironment.value("OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO") == "1" {
+            player.cloud.simulatesMissingPermission = true
+        }
         sources = SourceListViewController(library: index)
         tracks = TrackListViewController(library: index)
         super.init()

@@ -6,10 +6,12 @@ import AppKit
 ///   core    the shared pieces: the sample ring and host-clock maths (VisualizerHarness+Core)
 ///   parity  the ported engine against numbers from the original JavaScript (+Parity)
 ///   audio   the tap, the AnalyserNode emulation and the silence watchdog (+Audio)
+///   selfcapture  the ears without System Audio Recording, and which ears are picked (+SelfCapture)
 ///   render  the Metal renderer, HDR and SDR (+Render)
 ///   ui      the button, menu, full screen, keys and Settings (+UI)
 ///   cycles  fifty on/off cycles, then a leak check (+Cycles)
-/// Benches tap muted unless OLDTUNES_VIS_AUDIBLE=1, so a run never plays music out loud.
+/// Benches tap muted unless OLDTUNES_VIS_AUDIBLE=1, so a run never plays music out loud; the live
+/// selfcapture checks, which can't mute, run only then.
 @MainActor
 enum VisualizerHarness {
     static func run() async {
@@ -19,11 +21,12 @@ enum VisualizerHarness {
         case "core":   core(bench)
         case "parity": await parity(bench)
         case "audio":  await audio(bench)
+        case "selfcapture": await selfCapture(bench)
         case "render": await render(bench)
         case "ui":     await ui(bench)
         case "cycles": await cycles(bench)
         default:
-            bench.check("mode", false, "unknown OLDTUNES_VIS_MODE \(mode); use core, parity, audio, render, ui or cycles")
+            bench.check("mode", false, "unknown OLDTUNES_VIS_MODE \(mode); use core, parity, audio, selfcapture, render, ui or cycles")
         }
         bench.finish()
         Log.flush()
