@@ -65,6 +65,9 @@ final class PlaybackCoordinator: PlaybackControlling {
     /// state; a Pause pressed meanwhile cancels it by clearing this.
     private var pendingResume: (any Transport)?
     private var loadTask: Task<Void, Never>?
+    /// The album skip (⌥← ⌥→) still reading rows, if any. The next one waits for it, so two quick
+    /// presses go two albums on, not one.
+    private var albumSkip: Task<Void, Never>?
     private var observers: [UUID: @MainActor (PlaybackState) -> Void] = [:]
     /// OldTunes's own volume, the slider's, for files and for iCloud songs alike. Only when
     /// CloudTransport can't set an iCloud song's level itself (no System Audio Recording
@@ -259,6 +262,14 @@ final class PlaybackCoordinator: PlaybackControlling {
         }
     }
 
+    /// At the end of the list it does what next() does there: stops, or under Repeat All goes round
+    /// to the first album.
+    func nextAlbum() { skipAlbum(forward: true) }
+
+    /// On the first album it goes back to that album's first song, or under Repeat All round to
+    /// the last album.
+    func previousAlbum() { skipAlbum(forward: false) }
+
     func seek(to seconds: TimeInterval) {
         let upper = state.duration > 0 ? state.duration : max(seconds, 0)
         let t = min(max(seconds, 0), upper)
@@ -315,6 +326,60 @@ final class PlaybackCoordinator: PlaybackControlling {
         local.isSoundCheckOn = on
         cloud.isSoundCheckOn = on
         Log.info("playback: Sound Check \(on ? "on" : "off")")
+    }
+
+    // MARK: Album skips
+
+    private func skipAlbum(forward: Bool) {
+        let before = albumSkip
+        albumSkip = Task { [weak self] in
+            await before?.value
+            await self?.runAlbumSkip(forward: forward)
+        }
+    }
+
+    private func runAlbumSkip(forward: Bool) async {
+        guard let id = currentID else { return }
+        let list = live
+        let at = cursor
+        // The playing song isn't in the list (a search hid it), so there is no album to step from:
+        // do what next() and previous() do then.
+        guard list.indices.contains(at), list[at] == id else {
+            forward ? next() : previousSong()
+            return
+        }
+        let gen = generation
+        let target = await albumStart(in: list, from: at, forward: forward)
+        // A song picked while the rows were read, or a stop, wins.
+        guard gen == generation else { return }
+        state.lastError = nil
+        guard let target else {
+            endOfQueue()
+            return
+        }
+        // A re-sort or search since the walk began may have moved the song; follow it by id.
+        guard let index = live.firstIndex(of: list[target]) else { return }
+        if index == cursor {
+            seek(to: 0)
+        } else {
+            // Forward from the album's first song, so an unchecked one passes to the next on the album.
+            begin(at: index, direction: 1, userInitiated: true)
+        }
+    }
+
+    /// The index in `list` of the first song of the album after (or before) the one at `index`.
+    /// Albums are runs of songs side by side, as the list shows them. Nil going forward from the
+    /// last album without Repeat All.
+    private func albumStart(in list: [Track.ID], from index: Int, forward: Bool) async -> Int? {
+        let walk = AlbumWalk(list: list, library: library)
+        if forward {
+            let next = await walk.edge(of: index, by: 1) + 1
+            if next < list.count { return next }
+            return state.repeatMode == .all ? 0 : nil
+        }
+        let start = await walk.edge(of: index, by: -1)
+        if start > 0 { return await walk.edge(of: start - 1, by: -1) }
+        return state.repeatMode == .all ? await walk.edge(of: list.count - 1, by: -1) : start
     }
 
     // MARK: Song changes
@@ -798,5 +863,43 @@ private struct SkippedSongs {
         guard count > 1 else { return first }
         let more = count - 1
         return "\(first)\(first.hasSuffix(".") ? "" : ".") \(more.formatted()) more \(more == 1 ? "song" : "songs") could not be played either."
+    }
+}
+
+/// The songs of a list, read from the library a stretch at a time as an album skip walks it.
+@MainActor
+private final class AlbumWalk {
+    private let list: [Track.ID]
+    private let library: any LibraryReading
+    private var rows: [Track.ID: Track] = [:]
+    private var asked: Set<Track.ID> = []
+
+    init(list: [Track.ID], library: any LibraryReading) {
+        self.list = list
+        self.library = library
+    }
+
+    /// The first index (`step` -1) or the last (`step` 1) of the run of songs on the same album as
+    /// the one at `index`. A song the library no longer has ends the run.
+    func edge(of index: Int, by step: Int) async -> Int {
+        guard let song = await track(at: index, step) else { return index }
+        var edge = index
+        while list.indices.contains(edge + step), let next = await track(at: edge + step, step),
+              next.isOnSameAlbum(as: song) {
+            edge += step
+        }
+        return edge
+    }
+
+    private func track(at index: Int, _ step: Int) async -> Track? {
+        let id = list[index]
+        if !asked.contains(id) {
+            // The stretch ahead in one read, 256 songs at a time, as the walk past unplayable songs does.
+            let end = step > 0 ? min(list.count, index + 256) : max(-1, index - 256)
+            let ids = stride(from: index, to: end, by: step).map { list[$0] }
+            asked.formUnion(ids)
+            for track in (try? await library.tracks(ids: ids)) ?? [] { rows[track.id] = track }
+        }
+        return rows[id]
     }
 }

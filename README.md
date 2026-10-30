@@ -50,19 +50,24 @@ Settings ▸ Privacy & Security ▸ Automation ▸ OldTunes ▸ Music.
 
 ### System Audio Recording
 
-**When:** the first time you play an iCloud song or turn on the visualizer.
+**When:** the first time you play an iCloud song. On macOS 14.2 and 14.3, also the first time you
+turn on the visualizer.
 
 **Why:** OldTunes doesn't play iCloud songs itself. A separate Apple player does, out of sight.
 To set their volume and use Sound Check on them, OldTunes takes their sound from that player
-and plays it out itself. The visualizer also has to hear the music to move with it. macOS calls
-listening to that sound "recording". OldTunes listens only to its own songs, and it doesn't
-record or save anything.
+and plays it out itself. The visualizer listens the same way. macOS calls listening to that
+sound "recording". OldTunes listens only to its own songs, and it doesn't record or save anything.
+
+On macOS 14.4 and later, the visualizer can also listen another way, which needs no permission. It
+does that if you said no, and until OldTunes has checked the permission at your first iCloud song.
+While it does, macOS counts OldTunes as sharing its own window, so you may see the screen-sharing
+icon in the menu bar, and notifications may wait until you turn the visualizer off.
 
 **If you said no:** iCloud songs still play, but at their own volume. The volume slider is
-greyed out while one plays, and Sound Check can't change it. The visualizer says it can't hear
-the music. To turn it on, open System Settings ▸ Privacy & Security ▸ Screen & System Audio
-Recording, and under System Audio Recording Only, turn on OldTunes. Then quit and reopen
-OldTunes.
+greyed out while one plays, and Sound Check can't change it. On macOS 14.2 and 14.3, the
+visualizer says it can't hear the music. To turn the permission on, open System Settings ▸
+Privacy & Security ▸ Screen & System Audio Recording, and under System Audio Recording Only, turn
+on OldTunes. Then quit and reopen OldTunes.
 
 ### Your folders
 
@@ -171,6 +176,12 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 | Return, or double-click | Play the selected song |
 | ⌘→ / ⌘← | Next / previous song (⌘← first goes back to the start if the song has played for more than 3 seconds) |
 | ⌘↑ / ⌘↓ | Volume up / down |
+| → / ← | Next / previous song, like ⌘→ / ⌘←, while a song is on (not while you're typing) |
+| ⌥→ / ⌥← | Next / previous album |
+| ⌥⌘→ / ⌥⌘← | 5 seconds ahead / back in the song |
+| ⌥⌘↓ | Mute, and again to unmute |
+| ↑ / ↓, in the visualizer | Volume up / down |
+| → / ←, on a playlist folder | Open / close it (with ⌥, every folder inside it too) |
 | ⌘F | Search |
 | ⌘I | Get Info |
 | ⌘B | Show or hide Browse |

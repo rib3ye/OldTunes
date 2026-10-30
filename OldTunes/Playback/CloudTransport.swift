@@ -142,6 +142,7 @@ final class CloudTransport: Transport {
         let test = Task { @MainActor [weak self] in
             let answer = await SystemAudioProbe.run(simulatingMissingPermission: simulated)
             if let self, self.permissionTests == generation { self.permission = answer }
+            if !simulated, answer != .untested { SystemAudioProbe.lastAnswer = answer }
             return answer
         }
         permissionTest = test

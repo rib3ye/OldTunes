@@ -24,6 +24,8 @@ final class AppController: NSObject {
 
     private(set) var infoWindows: [GetInfoWindowController] = []
     private var keyMonitor: Any?
+    /// The volume Mute (⌥⌘↓) took away, while muted.
+    private var volumeBeforeMute: Float?
     /// The scope playback started from. Re-sorting or searching that list re-orders the queue;
     /// browsing a different playlist while a song plays does not (iTunes behaved the same way).
     private var playingScope: LibraryScope?
@@ -63,6 +65,12 @@ final class AppController: NSObject {
         self.rebuiltIndex = rebuiltIndex
         ingest = LibraryIngest(index: index)
         player = PlaybackCoordinator(library: index, cloud: ingest)
+        // Debug and Bench builds: play as if System Audio Recording were off, without changing it in
+        // System Settings. iCloud songs then play at their own level, and the visualizer listens
+        // through SelfCapture (docs/VISUALIZER.md ▸ Without the permission).
+        if LaunchEnvironment.value("OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO") == "1" {
+            player.cloud.simulatesMissingPermission = true
+        }
         sources = SourceListViewController(library: index)
         tracks = TrackListViewController(library: index)
         super.init()
@@ -85,6 +93,7 @@ final class AppController: NSObject {
         wirePlayback()
         installMenus()
         installSpaceBar()
+        installArrowKeys()
 
         NotificationCenter.default.addObserver(forName: .libraryDidChange, object: nil, queue: .main) { [weak self] note in
             let filled = note.userInfo?[LibraryChange.songsAddedTo] as? Int64
@@ -285,12 +294,25 @@ final class AppController: NSObject {
     @objc func volumeUp(_ sender: Any?) { setVolume(min(1, player.state.volume + 0.1)) }
     @objc func volumeDown(_ sender: Any?) { setVolume(max(0, player.state.volume - 0.1)) }
 
+    /// Controls ▸ Mute (⌥⌘↓), as in iTunes: the slider drops to the bottom, and Mute again puts it
+    /// back. Moving the volume any other way ends the mute, from the bottom.
+    @objc func toggleMute(_ sender: Any?) {
+        if let level = volumeBeforeMute {
+            setVolume(level)
+        } else {
+            volumeBeforeMute = player.state.volume
+            // Not saved, so a relaunch comes back at the level from before the mute.
+            player.setVolume(0)
+        }
+    }
+
     /// OldTunes's own volume, as the user last left it.
     static let volumeKey = "OldTunes.volume"
 
     /// The slider and ⌘↑/⌘↓. OldTunes's own volume is kept between launches, as iTunes kept its
     /// own. Both grey out during an iCloud song OldTunes can't set the level of.
     private func setVolume(_ volume: Float) {
+        volumeBeforeMute = nil
         player.setVolume(volume)
         UserDefaults.standard.set(player.appVolume, forKey: Self.volumeKey)
     }
@@ -1700,6 +1722,8 @@ final class AppController: NSObject {
         controls.addItem(.separator())
         controls.addItem(item("Volume Up", #selector(volumeUp(_:)), String(UnicodeScalar(NSUpArrowFunctionKey)!)))
         controls.addItem(item("Volume Down", #selector(volumeDown(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!)))
+        controls.addItem(item("Mute", #selector(toggleMute(_:)), String(UnicodeScalar(NSDownArrowFunctionKey)!),
+                              [.command, .option]))
         MainMenu.insert(controls, into: main)
 
         if let window = NSApp.windowsMenu {
@@ -1750,6 +1774,30 @@ final class AppController: NSObject {
         }
     }
 
+    /// iTunes's arrow keys (ArrowCommand), for the arrows the focused view passes on: the lists
+    /// keep ↑ and ↓, a source-list folder keeps ← and →, and a text field keeps them all.
+    private func installArrowKeys() {
+        windowController.metalWindow?.onUnusedKey = { [weak self] in self?.arrowKey($0, inVisualizer: false) ?? false }
+        visualizer?.onUnusedKey = { [weak self] in self?.arrowKey($0, inVisualizer: true) ?? false }
+    }
+
+    /// False lets the window beep, as it did before: no song on, or a volume OldTunes can't set.
+    private func arrowKey(_ event: NSEvent, inVisualizer: Bool) -> Bool {
+        guard let command = ArrowCommand(event: event, inVisualizer: inVisualizer) else { return false }
+        let songOn = player.state.nowPlaying != nil
+        switch command {
+        case .previousSong where songOn: player.previous()
+        case .nextSong where songOn: player.next()
+        case .previousAlbum where songOn: player.previousAlbum()
+        case .nextAlbum where songOn: player.nextAlbum()
+        case .scan(let seconds) where songOn: player.seek(to: player.state.position + seconds)
+        case .volumeUp where player.state.isVolumeEnabled: volumeUp(nil)
+        case .volumeDown where player.state.isVolumeEnabled: volumeDown(nil)
+        default: return false
+        }
+        return true
+    }
+
     private func embed(_ child: NSView, in container: NSView) {
         child.frame = container.bounds
         child.autoresizingMask = [.width, .height]
@@ -1782,6 +1830,9 @@ extension AppController: NSMenuItemValidation {
         case #selector(playPauseAction(_:)):
             menuItem.title = player.state.isPlaying ? "Pause" : "Play"
         case #selector(volumeUp(_:)), #selector(volumeDown(_:)):
+            return player.state.isVolumeEnabled
+        case #selector(toggleMute(_:)):
+            menuItem.state = volumeBeforeMute != nil ? .on : .off
             return player.state.isVolumeEnabled
         case #selector(toggleVisualizer(_:)):
             menuItem.title = visualizer?.isOn == true ? "Turn Off Visualizer" : "Turn On Visualizer"

@@ -19,6 +19,9 @@ final class MetalWindow: NSWindow {
     var onFullScreenChange: ((Bool) -> Void)?
     /// A private field editor for one client (the search field), or nil for the shared one.
     var fieldEditorProvider: ((Any?) -> NSText?)?
+    /// A key nothing in the window used, such as an arrow the song list passes on. Return true when
+    /// handled; otherwise the window beeps as usual.
+    var onUnusedKey: ((NSEvent) -> Bool)?
     /// Whether the first showing has happened (see makeKeyAndOrderFront).
     private var settledInitialFocus = false
 
@@ -115,7 +118,13 @@ final class MetalWindow: NSWindow {
         fieldEditorProvider?(object) ?? super.fieldEditor(createFlag, for: object)
     }
 
-    // MARK: - Key equivalents
+    // MARK: - Keys
+
+    /// The end of the responder chain: a key gets here when no view used it, or none has focus.
+    override func keyDown(with event: NSEvent) {
+        if onUnusedKey?(event) == true { return }
+        super.keyDown(with: event)
+    }
 
     /// ⌘W and ⌘F fallbacks for when the menu bar has no item for them. A menu item, when present,
     /// always wins, because the menu is asked first here.

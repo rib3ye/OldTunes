@@ -363,6 +363,10 @@ protocol PlaybackControlling: AnyObject {
     /// The previous song however far into this one, for the Dock menu: previous() needs a second
     /// press within 3 s to get past the restart, and reopening that menu takes longer.
     func previousSong()
+    /// ⌥→, iTunes's "next album in a list": the first song after the playing song's album.
+    func nextAlbum()
+    /// ⌥←: the first song of the album before the playing song's.
+    func previousAlbum()
     func seek(to seconds: TimeInterval)
     func stop()
     func setVolume(_ volume: Float)

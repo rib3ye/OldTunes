@@ -17,6 +17,8 @@ final class VisualizerRenderLoop: NSObject {
     let feed: AudioFeed
     /// The local-volume correction for the audio, read every step.
     var gain: () -> Float = { 1 }
+    /// How far behind the present each step reads the audio, in seconds (VisualizerEars.readDelay).
+    var audioDelay: () -> CFTimeInterval = { 0 }
     /// Whether the music is paused or stopped, which freezes the animation clocks.
     var musicPaused: () -> Bool = { false }
     /// Called after every frame, for benches.
@@ -134,7 +136,7 @@ final class VisualizerRenderLoop: NSObject {
     }
 
     private func audio(endingAt seconds: CFTimeInterval) -> AudioFrame {
-        feed.frame(endingAt: HostClock.ticks(seconds: seconds), gain: gain(), waveScale: driver.waveScale)
+        feed.frame(endingAt: HostClock.ticks(seconds: seconds - audioDelay()), gain: gain(), waveScale: driver.waveScale)
     }
 }
 

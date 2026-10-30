@@ -24,9 +24,11 @@ of Xcode's separately downloaded Metal toolchain.
 ## How sound reaches the screen
 
 1. Cloud songs sound from Apple's `com.apple.MediaPlayer.RemotePlayerService`, local files from
-   OldTunes itself. One Core Audio process tap reads both: a stereo mixdown, unmuted and private,
-   inside a private aggregate device clocked by the default output.
-2. The IOProc mixes each buffer to mono, ½(L+R), into `SampleRing`, four seconds long.
+   OldTunes itself. When OldTunes has System Audio Recording, one Core Audio process tap reads both
+   (`MusicAudioTap`): a stereo mixdown, unmuted and private, inside a private aggregate device
+   clocked by the default output. When it isn't known to, ScreenCaptureKit capturing OldTunes itself
+   reads both, with no permission (`SelfCapture`; see "Without the permission" below).
+2. Each buffer is mixed to mono, ½(L+R), into `SampleRing`, four seconds long.
 3. Once per engine step, the AnalyserNode emulation reads the 2048 samples that end at that step's
    time and makes an `AudioFrame`: the same numbers Chrome's AnalyserNode (fftSize 2048, smoothing
    0.6) gives Geiss HDR.
@@ -51,6 +53,60 @@ that each colour space runs over "an extended range, as defined by the reference
 (https://www.w3.org/TR/webgpu/, §3.11). So the palette's top value, 3.0, means about 12.8× SDR white, and the
 screen caps it at its headroom (4× to 16× on a MacBook Pro's XDR screen). It looks very bright, in Chrome too.
 `extendedLinearSRGB` would read 3.0 as only 3× white.
+
+## Without the permission
+
+macOS lets an app capture its own content with no permission and no prompt
+(`SCShareableContent.currentProcess`, macOS 14.4). The sound of an app capture is the app's own plus
+that of every process RunningBoard counts as hosted by the app, and RunningBoard counts the
+RemotePlayerService MusicKit starts for OldTunes as hosted by OldTunes (the log names it
+`xpcservice<com.apple.MediaPlayer.RemotePlayerService([app<application.com.noahtsutsui.oldtunes…>:pid])>`).
+So `SelfCapture`, a ScreenCaptureKit capture of OldTunes alone, hears iCloud songs as well as files.
+replayd, which runs the capture, makes the audio tap itself, on its own entitlements; the app's own
+permissions don't come into it. The probe under "Measured" showed this with a service of its own and
+no permission at all, and the `selfcapture` bench with a real iCloud song.
+
+Which ears the visualizer uses (`VisualizerAudio`):
+
+- The tap when OldTunes is known to have System Audio Recording: the cloud route is playing a song
+  out (which proves it), this launch's probe heard its tone at the first iCloud song, or, before then,
+  the last launch's probe did (`SystemAudioProbe.lastAnswer`, kept per signing certificate, as macOS
+  keeps the permission).
+  Benches always use the tap: only it can mute, and the tap benches check it. On macOS 14.2 and 14.3
+  it is always the tap, as before.
+- `SelfCapture` otherwise, on macOS 14.4 and later. There the visualizer raises the permission
+  prompt only if the last launch's answer is out of date (a tap is made only with the permission
+  known granted); otherwise only the first iCloud song does, for the volume and Sound Check.
+- Ears that have heard nothing since they started, while a song played long enough for the watchdog's
+  permission hint, give way to the other kind if that can hear (a tap only with the permission). A
+  silence after sound is the music's own and changes nothing, as before. When no other ears can take
+  over, the permission hint shows, as before: the permission is what makes a tap possible (after
+  reopening OldTunes, at its first iCloud song). A `SelfCapture` stopped from the menu bar stays
+  stopped until the visualizer is turned on again; if no tap can take over, a hint says to turn the
+  visualizer off and on. Each new song gives deaf ears a fresh chance. A last launch's "granted" is
+  forgotten once the tap has heard nothing in two songs.
+
+What it costs: macOS counts the capture as sharing the screen. Control Center lists the stream and
+Notification Center logs "Display sharing state changed to: true", so the menu bar's screen-sharing
+icon is expected, and notifications are held by default while a screen is shared. Nobody has looked
+at either yet: the probe ran while the Mac was locked. The video ScreenCaptureKit insists on is
+16 × 16 pixels once a second, thrown away. Sound arrives in 20 ms buffers 31–34 ms late on the median,
+so the renderer reads 50 ms behind the present while `SelfCapture` is in use
+(`VisualizerEars.readDelay`). Now and then, after a buffer about 38 ms late or more, two steps read
+the same window.
+
+To try it on a Mac that has the permission, launch a Debug build with
+`OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO=1`: OldTunes then plays as if the permission were off from the
+start (no route, iCloud songs at their own level), and the visualizer picks `SelfCapture`.
+`OLDTUNES_VIS_EARS=tap` or `self-capture` forces one kind whatever the permission; forcing
+`self-capture` while the route plays a song out makes it hear that song twice, so use the first.
+
+How this was found (October 29, 2026): six approaches were researched, each with a skeptic. Music's
+`download` command plus decoding the file (about 99% of the library would download unprotected, but
+it needs the Automation permission, writes about 10 MB a song and was never tried from the sandbox)
+and the system content-sharing picker (a click every launch) survived. Previews, metadata, Apple's
+player internals and an audio driver didn't. The picker's investigator noticed
+`currentProcess`; the probe under "Measured" showed it works.
 
 ## Source
 
@@ -118,7 +174,7 @@ JavaScript carries on where Swift stops the app, so the port follows these rules
 - Keys: Geiss HDR's keys work while the visualizer shows. Space stays Play/Pause, so "randomize
   everything" moves from Space to R. H shows the key list.
 - Turn On Visualizer is ⌘T, in a Visualizer menu after Controls (iTunes 4.9's place).
-- The visualizer is off at every launch, and the tap exists only while it's on.
+- The visualizer is off at every launch, and its ears exist only while it's on.
 
 ## Test bench
 
@@ -133,11 +189,13 @@ Run it on your Mac, from the repo (or worktree) folder the app was built in.
 | `core` | The sample ring and the host clock, which every other part leans on |
 | `parity` | The ported engine against numbers from the original JavaScript (warp maps, palettes, aligner, AdvectPoint) |
 | `audio` | The tap, the sample ring, the AnalyserNode emulation against Chrome's, the watchdog |
+| `selfcapture` | Which ears are picked, every case; with `OLDTUNES_VIS_AUDIBLE=1` also `SelfCapture` live: a local file and an iCloud song reach the feed, a paused song is silence, delivery within the read delay, 10 start/stop cycles. It plays out loud, a few seconds of each, because it can't mute |
 | `render` | The Metal renderer: HDR and SDR set-up, frame time, Metal validation |
 | `ui` | The button, the menu, full screen, the keys, the Settings checkbox |
 | `cycles` | Fifty on/off cycles in a small window kept above other windows, then checks nothing is left behind |
 
-Benches tap muted, so they make no sound, unless `OLDTUNES_VIS_AUDIBLE=1`. Before a run:
+Benches tap muted, so they make no sound, unless `OLDTUNES_VIS_AUDIBLE=1`; `selfcapture`'s live
+checks run only then. Before a run:
 `pgrep -lx OldTunes` must print nothing (benches share settings and the log with the real app),
 and the build must be signed "Apple Development: Noah Tsutsui" (team 92N52YB23U). Unlock the
 screen first: while the Mac is locked no window is visible, so the visualizer draws nothing and
@@ -162,3 +220,35 @@ On 2026-10-20, on a MacBook Pro (Apple M2 Max) with its built-in 120 Hz screen, 
 
 Still to check with Noah (M5): the picture side by side with the original in Chrome, and a long
 listening test. Done by hand on 2026-10-20: the HDR highlights ("it looked great") and the permission note.
+
+`SelfCapture` before it was in OldTunes, on 2026-10-29, macOS 27.0.1, with a probe app and an XPC
+service of its own (`tools/self-capture-probe`; its `build.sh` says how to run it), sandboxed and
+ad-hoc signed, never granted Screen Recording or System Audio Recording. Each played an inaudible tone
+(19 kHz and 18 kHz, −60 dBFS), the service's starting 10 s after the capture. The Mac was locked.
+
+| What | Result |
+|---|---|
+| Permission | `CGPreflightScreenCaptureAccess()` false; replayd logged "TCC Disallow" and started the stream anyway; TCC saw preflights only; no prompt |
+| The app's own tone | −63.0 dBFS RMS, the right level for a −60 dBFS sine; 100% non-zero |
+| The hosted service's tone | −63.0 dBFS RMS; replayd re-listed the app's related processes when the service started |
+| Silence | Exact zeros |
+| Window minimized, app hidden | No change, capturing the window (with the screen locked, so nothing was on screen anyway) |
+| Only window ordered out after the capture started | No change, capturing the window and capturing the app (as `SelfCapture` does) |
+| Format | 48 kHz, 2 ch, 32-bit float, non-interleaved, 960 frames a buffer |
+| Delivery | 31–34 ms late on the median and 46–49 ms at worst in each run of about 1,100 buffers (once 66 ms); the stream clock converts to host time to within 2 ms |
+
+Then in OldTunes, the `selfcapture` bench at 6:54 AM PT the same day, on the MacBook Pro (Apple M2
+Max), in a Debug build signed with Developer ID (so it shares the installed app's Media & Apple Music
+grant; replayd doesn't consult its System Audio Recording one). 18 PASS, 0 FAIL:
+
+| What | Result |
+|---|---|
+| Permission | Screen Recording preflight false; replayd "TCC Disallow", stream started anyway; TCC preflights only, no prompt |
+| Building `SelfCapture` | 100 ms; the slowest of 10 start/stop cycles 149 ms, nothing restarting after the last stop |
+| A local file, at a tenth of full volume | 68% non-zero, −51.5 dBFS |
+| An iCloud song (FairPlay), RemotePlayerService started after the capture | 100% non-zero, −13.0 dBFS: copy-protected sound isn't held back |
+| The song paused | Exact zeros |
+| Lag of the newest sample, sampled every 25 ms | Median 42 ms, worst 62 ms (it includes each buffer's wait for the next); read delay 50 ms |
+
+Not yet tried: what the menu bar and notifications do, minimizing or hiding with the screen
+unlocked, a capture started with no window on screen, and macOS earlier than 27.

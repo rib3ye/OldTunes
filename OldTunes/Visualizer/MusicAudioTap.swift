@@ -22,6 +22,37 @@ struct TapStatus: Sendable, Equatable {
     var remotePlayerTapped: Bool { tapped.contains { $0.bundleID == AudioHAL.remotePlayerBundleID } }
 }
 
+/// What the visualizer hears the music with. VisualizerAudio picks one: MusicAudioTap, a process tap
+/// that needs System Audio Recording, or SelfCapture, ScreenCaptureKit on OldTunes itself, which
+/// needs no permission. Both write the same SampleRing.
+@MainActor
+protocol VisualizerEars: AnyObject {
+    var ring: SampleRing { get }
+    var status: TapStatus { get }
+    /// How far behind the present the render loop reads the ring: about how late the newest sound
+    /// arrives, so each step finds new sound rather than the last delivery again.
+    var readDelay: TimeInterval { get }
+    func start() async
+    func stop()
+    func rebuild(reason: String) async
+}
+
+@available(macOS 14.2, *)
+extension MusicAudioTap: VisualizerEars {
+    /// The IOProc writes each buffer within a few milliseconds of its time stamp.
+    var readDelay: TimeInterval { 0 }
+}
+
+@available(macOS 14.4, *)
+extension SelfCapture: VisualizerEars {
+    /// Sound arrives in 20 ms buffers, 31–34 ms after it played on the median and 46–49 ms at worst
+    /// in a run (SelfCapture). Past about 30 ms late, the newest sound is older than 50 ms for a few
+    /// milliseconds before the next buffer lands, so now and then (buffers about 38 ms late or more)
+    /// two steps read the same window. Reading further back would make the picture trail the sound
+    /// by more, which is worse.
+    var readDelay: TimeInterval { 0.05 }
+}
+
 /// The visualizer's ears: one Core Audio process tap on OldTunes itself (local files) and on the
 /// RemotePlayerService that renders this OldTunes's cloud songs, inside a private aggregate device
 /// clocked by the default output. The IOProc mixes to mono into a SampleRing. While CloudAudioRoute
