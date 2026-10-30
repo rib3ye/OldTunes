@@ -1,9 +1,10 @@
 import Foundation
 import GRDB
 
-/// Playlist changes OldTunes made through Music (the source list's right-click commands),
-/// applied to the index at once. Music's change notification brings a re-ingest about 7 s later
-/// that rewrites every playlist from Music's own database; until then the source list shows these.
+/// Playlist changes OldTunes made through Music (the source list's right-click commands, and
+/// songs added to playlists), applied to the index at once. Music's change notification brings a
+/// re-ingest about 7 s later that rewrites every playlist from Music's own database; until then
+/// the source list shows these.
 extension LibraryIndex {
     func apply(_ edit: PlaylistEdit) async throws {
         try await pool.write { db in
@@ -34,6 +35,25 @@ extension LibraryIndex {
                 // playlist_item rows go with them (ON DELETE CASCADE).
                 try db.execute(sql: "DELETE FROM playlist WHERE id IN (SELECT value FROM json_each(?))",
                                arguments: [Self.jsonArray(doomed)])
+            case .songsAdded(let id, let persistentIDs):
+                // After the playlist's last entry, in the order Music took them, repeats kept.
+                // The joins leave out what the index can't place: a persistent ID no Music-library
+                // song has, and a playlist that isn't a plain one here. A row per ID in VALUES
+                // would fail the foreign key instead and roll back the whole edit. An ID left out
+                // leaves a gap in the positions, which ordering by position doesn't mind.
+                let start = try Int.fetchOne(db, sql: """
+                    SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_item WHERE playlist_id = ?
+                    """, arguments: [id]) ?? 0
+                try db.execute(sql: """
+                    INSERT INTO playlist_item (playlist_id, song_id, position)
+                    SELECT p.id, s.id, ? + j.key FROM json_each(?) j
+                    JOIN song s ON s.persistent_id = j.value AND s.origin = \(Track.Origin.musicLibrary.rawValue)
+                    JOIN playlist p ON p.id = ? AND p.kind = \(PlaylistInfo.Kind.regular.storedValue)
+                    """, arguments: [start, Self.jsonArray(persistentIDs), id])
+                // Counted as ingest counts it: every entry, repeats included.
+                try db.execute(sql: """
+                    UPDATE playlist SET track_count = (SELECT COUNT(*) FROM playlist_item WHERE playlist_id = ?) WHERE id = ?
+                    """, arguments: [id, id])
             }
             for (position, slot) in slots.enumerated() where slot.sortIndex != position {
                 try db.execute(sql: "UPDATE playlist SET sort_index = ? WHERE id = ?", arguments: [position, slot.id])
@@ -41,8 +61,31 @@ extension LibraryIndex {
             // The next re-ingest must rewrite the playlists from Music even if they hash the same
             // as the last ingest's, or an edit Music never actually made would stay on screen.
             try db.execute(sql: "DELETE FROM meta WHERE key = 'playlists_hash'")
+            // And a re-ingest that read Music's playlists before this edit must not put back what
+            // it read over it (replaceMusicLibrary's `playlistStamp`).
+            try db.execute(sql: """
+                INSERT INTO meta (key, value) VALUES ('playlist_edit_stamp', 1)
+                ON CONFLICT (key) DO UPDATE SET value = value + 1
+                """)
         }
-        await Self.postDidChange()
+        // Songs going in, chunk after chunk of a long add, are news only to a list showing that
+        // playlist; AppController reloads nothing else for them.
+        if case .songsAdded(let id, _) = edit {
+            await Self.postDidChange(songsAddedTo: id)
+        } else {
+            await Self.postDidChange()
+        }
+    }
+
+    /// How many playlist edits `apply(_:)` has written. A re-ingest reads it just before it reads
+    /// Music's playlists and hands it back to `replaceMusicLibrary`: if it has moved by the
+    /// write, an edit landed meanwhile that the snapshot may not have.
+    func playlistEditStamp() async throws -> Int64 {
+        try await pool.read { db in try Self.playlistEditStamp(db) }
+    }
+
+    static func playlistEditStamp(_ db: Database) throws -> Int64 {
+        try Int64.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'playlist_edit_stamp'") ?? 0
     }
 }
 

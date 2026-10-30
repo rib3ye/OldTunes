@@ -37,14 +37,16 @@ OldTunes. Then quit and reopen OldTunes: macOS only applies the change after a r
 
 ### Control the Music app
 
-**When:** the first time you edit a song's details, change a playlist, or add songs to the Music
-app.
+**When:** the first time you edit a song's details, change a playlist, download a song, or add
+songs to the Music app.
 
 **Why:** OldTunes makes those changes through the Music app, so Music and your other devices
-show them too. OldTunes never uses this to play anything in Music.
+show them too. Downloads go through the Music app as well: it does the downloading and keeps the
+files in its own folder. If the Music app isn't open when OldTunes needs it, OldTunes opens it
+out of sight. OldTunes never uses this to play anything in Music.
 
-**If you said no:** OldTunes can't save those changes. Turn it on in System Settings ▸ Privacy &
-Security ▸ Automation ▸ OldTunes ▸ Music.
+**If you said no:** OldTunes can't save those changes or download songs. Turn it on in System
+Settings ▸ Privacy & Security ▸ Automation ▸ OldTunes ▸ Music.
 
 ### System Audio Recording
 
@@ -94,9 +96,53 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
   devices. If Music turns down some files, OldTunes keeps them and tells you which ones.
 - **On This Mac**, in the list on the left, shows only the songs stored on this Mac.
 - **Playlists** from the Music app show on the left, and **Browse** sorts your music by genre,
-  artist and album. Right-click a playlist to make a new one or a folder, or to rename, copy or
-  delete it. These changes happen in the Music app, so they reach your other devices too. Smart
-  playlists can't be copied.
+  artist and album. Right-click a playlist to make a new one or a folder, or to rename, copy,
+  download or delete it. **File ▸ New Playlist** (⌘N) also makes one. These changes happen in
+  the Music app, so they reach your other devices too. Smart playlists can't be copied.
+- **Add songs to a playlist** by dragging them onto it, in the list on the left. Drag sideways:
+  dragging up or down still selects more songs. Or right-click the songs and pick a playlist
+  under **Add to Playlist**. To put them in a new playlist, pick **New Playlist** at the top of
+  that menu, or choose **File ▸ New Playlist from Selection** (⇧⌘N), then type its name. The
+  songs show up in the playlist as the Music app adds them.
+  - Only your own plain playlists take songs, not smart playlists, folders, Purchased, or
+    playlists you added from Apple Music.
+  - A song that's already in a playlist isn't added again.
+  - Songs from a folder you added that the Music app doesn't have can't go in a playlist.
+    OldTunes tells you how to give them to Music.
+  - OldTunes can't take songs back out of a playlist, so adding more than 500 songs at once
+    asks first. To take a song out, use the Music app.
+  - Adding a lot of songs takes a while. Other playlist changes wait until it's done. Quitting
+    the Music app stops it.
+  - If a change that was waiting asks you something first, or opens a new playlist's name, it
+    waits until you've finished typing a playlist's name. A message that something went wrong
+    can still come up.
+  - If some songs don't go in, OldTunes tells you which ones, in one message at the end. While
+    you're typing a playlist's name, the message waits until you've finished. If the Music app
+    was too slow to answer about a song, the message says that song may still go in.
+- **Download iCloud songs** to your Mac. Right-click songs ▸ **Download**, or select them and
+  choose **File ▸ Download**. To download a playlist's iCloud songs, right-click the playlist ▸
+  **Download**. Songs already on your Mac are left alone. While a song downloads, the little
+  cloud at the end of its name turns blue (on a selected song it stays white). When the song is
+  on your Mac, the cloud goes away and the song shows in On This Mac.
+  - During a big download, a song can keep its blue cloud for a few minutes after it arrives.
+  - A big download (more than 100 songs, or more than 2 GB) asks first. It says how much space
+    the songs need and how much your Mac has free.
+  - While OldTunes is still asking the Music app for songs, File ▸ Download reads **Stop
+    Downloading**. Songs it has already asked for keep coming.
+  - If the Music app turns down three songs in a row for the same reason before it has taken
+    any, OldTunes stops asking for the rest and tells you why.
+  - Leave the Music app open while songs download. If you quit it, OldTunes stops and tells you
+    which songs didn't come down. They're still in iCloud.
+  - If no song comes down for about 15 minutes, OldTunes stops waiting and tells you which ones
+    didn't. Time your Mac spends asleep doesn't count. When every song comes down, it says
+    nothing.
+  - A message about downloads waits while you're typing a playlist's name. Then it names only the
+    songs that still haven't come down.
+  - Only the Music app can remove a download.
+  - Songs you added from Apple Music come down protected, so only the Music app can play their
+    files. Other songs can come down protected too when the Music app downloads at Lossless
+    quality. OldTunes keeps playing those songs from iCloud.
+  - A dimmed song, whose file is missing, can't be downloaded from OldTunes.
 - **Light or dark.** In OldTunes ▸ Settings (⌘,), pick Light (the 2005 look), Dark, or Match
   System, which follows your Mac. Match System is the default.
 - **Sound Check**, also in Settings, plays every song about equally loud, using the levels the
@@ -134,6 +180,8 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 | ⌘T | Visualizer on or off |
 | ⇧⌘F | Visualizer full screen (Esc comes back) |
 | H | The visualizer's own keys, while it shows |
+| ⌘N | New playlist |
+| ⇧⌘N | New playlist with the selected songs |
 | Return, on a playlist | Rename it (Esc cancels) |
 | Delete, on a playlist | Delete it (OldTunes asks first) |
 
@@ -141,9 +189,8 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 
 - **AirPlay.** iCloud songs can't play over AirPlay or crossfade, and the visualizer can't hear
   music that's playing over AirPlay.
-- **Downloads.** OldTunes can't download iCloud songs to your Mac.
-- **Editing inside playlists.** You can't add or remove single songs in a playlist yet, or change
-  a smart playlist's rules. Copying a long playlist takes a while.
+- **Editing inside playlists.** You can't remove single songs from a playlist yet, or change a
+  smart playlist's rules. Copying a long playlist, or adding a lot of songs to one, takes a while.
 - **Sound Check on songs stored on your Mac** can only turn a quiet song up as far as the volume
   slider has room. The Music app can go further.
 - **Keys right as an iCloud song starts.** In its first moment, pressing play/pause or next on

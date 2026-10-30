@@ -69,6 +69,10 @@ final class LocalTransport: Transport {
     /// What AVPlayer was given: the slider times the gain. For the harness's logs.
     var playerVolume: Float { player.volume }
 
+    /// The file queued behind the current one, if any. For the playback bench, which checks
+    /// that a protected download or a package is never queued.
+    var preloadedURL: URL? { preloaded?.url }
+
     /// AVPlayer's volume stops at 1, the file's own level. So a song Sound Check makes louder
     /// (energy under 1000) is matched only as far as the slider leaves room: exactly while
     /// slider × gain ≤ 1, and held at the file's own level above that.
@@ -76,6 +80,9 @@ final class LocalTransport: Transport {
         player.volume = min(sliderVolume * (isSoundCheckOn ? soundCheckGain : 1), 1)
     }
 
+    /// Throws `.protected` for a protected download, which AVFoundation may still call playable
+    /// (AVAsset.h), so the coordinator streams the song from iCloud instead. Checked here, at
+    /// load, because a failure once playing skips to the next song rather than trying iCloud.
     func load(_ what: Playable) async throws {
         guard case .local(let url) = what else { throw TransportError.unsupported }
         loadToken += 1
@@ -84,17 +91,21 @@ final class LocalTransport: Transport {
 
         if let next = preloaded, next.url == url, player.items().dropFirst().first === next.item {
             preloaded = nil
-            let seconds = try await next.asset.load(.duration).seconds
+            // The same checks as a fresh load; on a throw the coordinator's stop() empties the queue.
+            let (playable, protected, length) = try await next.asset.load(.isPlayable, .hasProtectedContent, .duration)
             guard token == loadToken else { throw CancellationError() }
+            guard !protected else { throw TransportError.protected }
+            guard playable else { throw TransportError.notPlayable }
             player.advanceToNextItem()
-            duration = seconds.isFinite ? seconds : 0
+            duration = length.seconds.isFinite ? length.seconds : 0
             Log.info("local: started the preloaded next file \(url.lastPathComponent)")
             return
         }
 
         let asset = AVURLAsset(url: url)
-        let (playable, length) = try await asset.load(.isPlayable, .duration)
+        let (playable, protected, length) = try await asset.load(.isPlayable, .hasProtectedContent, .duration)
         guard token == loadToken else { throw CancellationError() }
+        guard !protected else { throw TransportError.protected }
         guard playable else { throw TransportError.notPlayable }
         preloaded = nil
         player.removeAllItems()
@@ -103,10 +114,17 @@ final class LocalTransport: Transport {
     }
 
     /// Queues `url` behind the current item so its decode overlaps the current song's playback.
-    func preload(_ url: URL) {
+    /// Not a protected download: queued, it would sit behind this song only to fail when reached,
+    /// while its own start sends it to iCloud.
+    func preload(_ url: URL) async {
         guard player.currentItem != nil, preloaded?.url != url else { return }
-        for item in player.items().dropFirst() { player.remove(item) }
+        let token = loadToken
         let asset = AVURLAsset(url: url)
+        // A file that won't say is left to its own start too, which reports why.
+        guard let protected = try? await asset.load(.hasProtectedContent), !protected else { return }
+        // A load() or stop() meanwhile changed what is playing.
+        guard token == loadToken, player.currentItem != nil, preloaded?.url != url else { return }
+        for item in player.items().dropFirst() { player.remove(item) }
         let item = AVPlayerItem(asset: asset)
         player.insert(item, after: player.currentItem)
         preloaded = (url, asset, item)

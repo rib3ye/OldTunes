@@ -14,6 +14,9 @@ final class RetroTableView: NSTableView {
     var interceptMouseDown: ((NSEvent) -> Bool)?
     /// Fires when focus enters or leaves, so the selection can switch between blue and gray.
     var onFocusChange: ((Bool) -> Void)?
+    /// A drag over this table left it without dropping, for a table that draws its own drop
+    /// feedback (the source list's outline) and has to take it down.
+    var onDragExit: (() -> Void)?
 
     init(rowHeight: CGFloat) {
         super.init(frame: .zero)
@@ -109,6 +112,15 @@ final class RetroTableView: NSTableView {
         // NSMenuHighlightView that outlines it in the macOS 11 style while the menu is open.
         // The menu's actions read the selection, never clickedRow.
         return menu
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        // NSDraggingDestination's methods are all optional, so `super` compiles whether or not
+        // NSTableView implements this one, and would crash at run time if it didn't.
+        if NSTableView.instancesRespond(to: #selector(NSDraggingDestination.draggingExited(_:))) {
+            super.draggingExited(sender)
+        }
+        onDragExit?()
     }
 
     override func becomeFirstResponder() -> Bool {

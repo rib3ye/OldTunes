@@ -99,6 +99,9 @@ else on your Mac. What that means:
 - `Vendor/CXXMonkeysAudio` — the Monkey's Audio package SFBAudioEngine uses, with a permissively
   licensed MD5 in place of a GPL one. `Vendor/README.md` says why and when to remove it.
 - `docs/RESEARCH.md` §7.7 — the dark ("Graphite") colors and how the switch works.
+- `docs/RESEARCH.md` §6.9 and §6.10 — how Download and adding songs to playlists work through
+  the Music app, and what the `musicdownload` and `musicplaylists` live checks still have to
+  measure.
 
 ## Test benches
 
@@ -135,19 +138,57 @@ tools/make-library-fixtures.sh /tmp/scratchpad/evidence/library
 open -n -W --env OLDTUNES_HARNESS=library --env OLDTUNES_DB_PATH=/tmp/scratchpad/evidence/library/index.sqlite build/dd/Build/Products/Debug/OldTunes.app
 ```
 
-The bench quits by itself; its last log line is `library harness: SUMMARY …`.
+The bench quits by itself; its last log line is `library harness: SUMMARY …`. Its change
+checks post the system-wide library-changed notice that Music posts, 18 times in all, so an
+OldTunes that is open at the same time re-reads its own library four or five times during the
+run. Nothing else in that app changes, and the bench never writes to the Music library. Music
+posts that notice by itself too (iCloud Library syncing, a play count), and each one starts a
+re-read. So the checks that count re-reads exactly also count Music's notices, from 25 s before
+a check begins (a re-read one started can still be running then) until it ends. One that fails
+while Music posted says `BLOCKED … Music posted N notices of its own during the check; run
+again` instead of FAIL, and counts among the SUMMARY's blocked checks. The check that one more
+re-read follows by itself after a playlist edit says so even if it would have passed, since a
+notice of Music's can do that re-read's job. Run the bench again.
 
-`OLDTUNES_LISTS_MODE=playlists` runs only the `lists` bench's playlist-command checks (the
-right-click menu, renaming in place, Delete, and the index edits behind them). It uses an
-invented library in a scratch index, never Music.
+`OLDTUNES_LISTS_MODE=playlists` runs only the `lists` bench's playlist checks: the right-click
+menus, renaming in place (and waiting while a name is being typed, as the alerts after an add or
+a Download do), Delete and the index edits behind them, songs dragged onto playlists and
+the drop outline, Add to Playlist ▸, the blue cloud on songs being downloaded, and the rules and
+alert texts behind adding and downloading (the download watch runs on a made-up clock). It uses
+an invented library in scratch indexes, never Music.
 
-Three live checks change the real Music library, so they run only with the library owner's
+Four live checks change the real Music library, so they run only with the library owner's
 go-ahead: `musictag` (saves one comment through Music, then puts it back), `musicadd`
 (adds an invented test tone through Add Folder's Music option; `OLDTUNES_MUSICADD_REMOVE`
-takes it back out) and `musicplaylists` (makes, renames, duplicates and deletes “OldTunes
-Test” playlists, then checks they're all gone). The headers of
-`OldTunes/App/MusicTagLiveTest.swift`, `OldTunes/App/MusicAddLiveTest.swift` and
-`OldTunes/App/MusicPlaylistLiveTest.swift` say how to run them.
+takes it back out), `musicplaylists` (makes, renames, duplicates, fills and deletes “OldTunes
+Test” playlists in 9 steps, then checks they're all gone and that Music made no copy of a song)
+and `musicdownload` (asks Music to download one iCloud song, named by its persistent ID in
+`OLDTUNES_DOWNLOAD_PID`, and times how it comes down). The headers of
+`OldTunes/App/MusicTagLiveTest.swift`, `OldTunes/App/MusicAddLiveTest.swift`,
+`OldTunes/App/MusicPlaylistLiveTest.swift` and `OldTunes/App/MusicDownloadLiveTest.swift` say
+how to run them.
+
+`musicdownload` is the only one that always leaves something behind. Music has no scripting
+command to remove a download, so the downloaded file stays on the Mac, using disk space, until
+someone removes it by hand in the Music app (right-click the song ▸ Remove Download). Pick a
+short song. Until it's removed, the `library` bench's checks that count on exactly 5 local
+files fail as well, such as `5 local files`, `.onThisMac = 5 library files + folder tracks` and
+the R1 check that the 5 local Music files are readable.
+
+`musicplaylists` deletes every playlist it makes, but it can't take back a copy of a song, the
+failure its add step is there to catch. If Music answers the add by putting a new song in the
+library instead of only an entry in the test playlist, the run stops, the log names the new
+song by its persistent ID ("a copy Music made; remove it by hand in Music"), and the last step,
+`nothing left behind`, fails until it's gone. It names a song only when both reads of the
+library around that add call worked and no more songs are new than the call sent: a read that
+comes back empty or short stops the run with "couldn’t read the library", and more new songs
+than that are counted, never named. Either way `nothing left behind` then fails too, naming no
+song, since whether Music made a copy can't be told. A song from another device that arrives
+during the call could still be taken for a copy, so look the ID up in Music before removing
+anything. The script never deletes a song: a scripted
+`delete` takes it out of the whole library, and Sync Library takes it off every device. For
+each add call it also logs how long the call took a song and the library-changed notices Music
+posted around it, the numbers `docs/RESEARCH.md` §6.10 says are still to be measured.
 
 ## Logs
 

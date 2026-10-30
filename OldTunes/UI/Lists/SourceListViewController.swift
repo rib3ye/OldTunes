@@ -8,7 +8,8 @@ import AppKit
 /// hit-tested here instead.
 ///
 /// Right-clicking offers the playlist commands (New Playlist, New Playlist Folder, Rename,
-/// Duplicate, Delete); Return renames the selected playlist and Delete deletes it. The source
+/// Duplicate, Download, Delete); Return renames the selected playlist and Delete deletes it.
+/// Songs dragged from the track list drop onto plain playlists (RESEARCH.md §6.10). The source
 /// list only asks for each one: AppController makes the change through Music.
 @MainActor
 final class SourceListViewController: NSViewController {
@@ -25,6 +26,11 @@ final class SourceListViewController: NSViewController {
     var onDuplicatePlaylist: ((PlaylistInfo) -> Void)?
     /// Asks; the caller confirms with the user before deleting anything.
     var onDeletePlaylist: ((PlaylistInfo) -> Void)?
+    /// Songs dropped on a plain playlist other than the one shown, in the order they were dragged.
+    /// A drop never changes the selection. Nil refuses every drop.
+    var onAddSongs: ((_ ids: [Track.ID], _ playlist: PlaylistInfo) -> Void)?
+    /// Download on a plain or smart playlist's menu: the caller downloads its cloud-only songs.
+    var onDownloadPlaylist: ((PlaylistInfo) -> Void)?
 
     init(library: any LibraryReading) {
         self.library = library
@@ -40,13 +46,19 @@ final class SourceListViewController: NSViewController {
     /// Two quick `.libraryDidChange` posts start two reads; only the newest one is applied, so
     /// an older read that lands late never brings back a deleted or renamed playlist. An older
     /// call returns once the newest read is shown, so a caller that reloads and then selects a
-    /// new playlist always finds its row.
+    /// new playlist always finds its row. The table is rebuilt only when a row would show
+    /// something else (`refreshRows`): songs going into a playlist change only its count, which
+    /// no row shows, so each chunk of an add leaves the list, its selection and a name box be.
     func reload() async {
         reloadGeneration += 1
         let generation = reloadGeneration
+        var read = false
         do {
             let lists = try await library.playlists()
-            if generation == reloadGeneration { playlists = lists }
+            if generation == reloadGeneration {
+                playlists = lists
+                read = true
+            }
         } catch {
             if generation == reloadGeneration { Log.error("sourcelist: playlists() failed: \(error)") }
         }
@@ -57,21 +69,30 @@ final class SourceListViewController: NSViewController {
             }
             return
         }
-        loadedOnce = true
-        rebuildRows()
+        // Only a read that worked (`loadIfNeeded`).
+        if read { loadedOnce = true }
+        refreshRows()
         shownGeneration = generation
         let done = reloadWaiters.filter { $0.generation <= generation }
         reloadWaiters.removeAll { $0.generation <= generation }
         for waiter in done { waiter.continuation.resume() }
     }
 
+    /// Reads the playlists now, unless a read of them has worked already. For `unusedName` right
+    /// after launch (⌘N in the first moments): over a list not read yet it would pick a name
+    /// Music may have already, and a new playlist's name is what proves Music's answer leads to
+    /// the playlist it made (MusicPlaylistEditor.confirm). A read that failed doesn't count, so
+    /// the next call tries again.
+    func loadIfNeeded() async {
+        if !loadedOnce { await reload() }
+    }
+
     /// Opens a playlist's name for typing, over its row, as iTunes did for a new playlist.
     func beginRename(_ id: Int64) {
         // Typing over another row keeps what was typed there, as a click away would.
-        if renaming != nil { view.window?.makeFirstResponder(table) }
+        endRenaming()
         select(.playlist(id))
-        guard let playlist = playlists.first(where: { $0.id == id }),
-              let row = rows.firstIndex(where: { $0.scope == .playlist(id) }) else { return }
+        guard let playlist = self.playlist(id), let row = rows.firstIndex(where: { $0.scope == .playlist(id) }) else { return }
         let field = SourceRenameField(name: playlist.name)
         field.onEnd = { [weak self] name, byKey in self?.endRename(id, name, byKey: byKey) }
         renaming = (id, field)
@@ -80,8 +101,20 @@ final class SourceListViewController: NSViewController {
         scrollView.contentView.addSubview(field, positioned: .above, relativeTo: nil)
         placeRenameField()
         table.scrollRowToVisible(row)
+        // Closing that window ends the box (`windowWillClose`); hiding or minimizing it doesn't.
+        watchForClose(of: view.window)
         // Taking focus starts editing with the whole name selected.
         view.window?.makeFirstResponder(field.field)
+    }
+
+    /// Ends the name being typed, if any, keeping what was typed, as a click elsewhere would: a
+    /// new name is asked for (`onRenamePlaylist`) before this returns. For a command the user
+    /// gives while typing one (⌘N, ⇧⌘N, New Playlist in a menu), whose own box then needn't wait
+    /// for this one (`renamesEnded`), and whose name isn't typed into this one meanwhile.
+    func endRenaming() {
+        if renaming != nil { view.window?.makeFirstResponder(table) }
+        // If that didn't close it, the box never had the keys (no window then): nothing typed is lost.
+        cancelRename()
     }
 
     /// Takes a playlist Music has deleted (and everything in it) out of the list now, rather than
@@ -94,6 +127,7 @@ final class SourceListViewController: NSViewController {
         if case .playlist(let selected) = scope { selectionGoes = doomed.contains(selected) }
         let selectedRow = table.selectedRow
         playlists.removeAll { doomed.contains($0.id) }
+        for id in doomed { pendingNames[id] = nil }
         if !expanded.isDisjoint(with: doomed) {
             expanded.subtract(doomed)
             saveExpanded()
@@ -102,9 +136,10 @@ final class SourceListViewController: NSViewController {
     }
 
     /// `base`, or `base 2`, `base 3`… whichever no playlist is called yet, as iTunes numbered
-    /// its untitled playlists.
+    /// its untitled playlists. A name typed over a playlist counts while Music saves it, and so
+    /// does the name it replaces, which Music still has until then.
     func unusedName(_ base: String) -> String {
-        let taken = Set(playlists.map { $0.name.lowercased() })
+        let taken = Set((playlists.map(\.name) + pendingNames.values).map { $0.lowercased() })
         guard taken.contains(base.lowercased()) else { return base }
         var n = 2
         while taken.contains("\(base) \(n)".lowercased()) { n += 1 }
@@ -117,6 +152,68 @@ final class SourceListViewController: NSViewController {
     /// Whether the list still has this playlist (folded away inside a folder counts).
     func hasPlaylist(_ id: Int64) -> Bool { playlists.contains { $0.id == id } }
 
+    /// The playlist as the list shows it, with a name typed over it while Music saves that; nil
+    /// when the list doesn't have it. For Add to Playlist ▸, which hands back only an id.
+    func playlist(_ id: Int64) -> PlaylistInfo? { playlists.first { $0.id == id }.map(shown) }
+
+    /// Every plain playlist in the list's order, inside the folders that hold one, open or not:
+    /// the track list's Add to Playlist ▸ menu. Smart and Genius playlists take no songs, so
+    /// they are left out, and so are folders with no plain playlist inside.
+    var playlistTree: [PlaylistMenuEntry] {
+        let children = playlistsByParent()
+        var visited = Set<Int64>()
+        func entries(_ parent: Int64?) -> [PlaylistMenuEntry] {
+            var found: [PlaylistMenuEntry] = []
+            for p in children[parent] ?? [] where visited.insert(p.id).inserted {
+                switch p.kind {
+                case .folder:
+                    let inside = entries(p.id)
+                    if !inside.isEmpty { found.append(PlaylistMenuEntry(playlist: p, children: inside)) }
+                case .regular:
+                    found.append(PlaylistMenuEntry(playlist: p, children: []))
+                    // A playlist with playlists under it (libraries can be odd): those go beside it.
+                    found += entries(p.id)
+                case .smart, .genius:
+                    found += entries(p.id)
+                }
+            }
+            return found
+        }
+        return entries(nil)
+    }
+
+    /// The rename of `id` to `name` is over: the list stops showing that name over the index's,
+    /// and redraws. Call it once the index has the name (after the `.renamed` edit and its
+    /// reload), or the old name flashes back; or when Music refused it, which puts the old name
+    /// back. A newer name typed since stays until its own rename ends.
+    func endPendingRename(_ id: Int64, name: String) {
+        guard pendingNames[id] == name else { return }
+        pendingNames[id] = nil
+        rebuildRows()
+    }
+
+    /// Returns once `id`'s name is no longer open for typing: at once when it isn't, otherwise
+    /// when the box closes, however it closes (Return, Escape, a click elsewhere, the row going
+    /// in a reload or a delete, the window closing). What was typed is then in `playlist(_:)`.
+    /// For an alert, whose sheet would otherwise take the keys halfway through a name.
+    func renameEnded(_ id: Int64) async {
+        guard renaming?.id == id else { return }
+        await withCheckedContinuation { renameWaiters[id, default: []].append($0) }
+    }
+
+    /// The playlist whose name is open for typing, if any.
+    var renamingID: Int64? { renaming?.id }
+
+    /// Returns once no playlist's name is open for typing, whichever playlist's it is: for the
+    /// alerts after an add or a Download, and the queued playlist commands that ask first or open
+    /// a name (AppController.enqueuePlaylistWork). Checked again after each box closes, since
+    /// another can open in the same turn: Rename on another playlist closes the open box and opens
+    /// its own. A ⌘N the user gives while typing ends the open box at once (`endRenaming`), and
+    /// one that comes due later, queued behind other commands, waits here for a box opened since.
+    func renamesEnded() async {
+        while let open = renamingID { await renameEnded(open) }
+    }
+
     // MARK: Harness access (module-internal)
 
     var tableView: NSTableView { table }
@@ -126,6 +223,11 @@ final class SourceListViewController: NSViewController {
     var playlistCount: Int { playlists.count }
     /// The name box while a playlist is being renamed.
     var renameField: NSTextField? { renaming?.field.field }
+    /// The playlist the drop outline is on, while songs are dragged over one.
+    var dropTargetID: Int64? { dropTarget }
+    /// How many times the table has been rebuilt from the playlists (`rebuildRows`). A reload that
+    /// changes nothing a row shows doesn't rebuild it.
+    private(set) var rowRebuilds = 0
 
     /// Selects a scope as if clicked (expanding folders on the way), for tests and integration.
     func select(_ newScope: LibraryScope) {
@@ -188,6 +290,13 @@ final class SourceListViewController: NSViewController {
             if case .playlist(let p) = kind, p.kind == .folder { return p.id }
             return nil
         }
+
+        /// Draws the same, for the same playlist: its name, icon, depth and triangle. A song count
+        /// isn't drawn, so rows that differ only in one look alike.
+        func looksLike(_ other: Row) -> Bool {
+            scope == other.scope && title == other.title && playlist?.kind == other.playlist?.kind
+                && depth == other.depth && hasChildren == other.hasChildren && isExpanded == other.isExpanded
+        }
     }
 
     private let library: any LibraryReading
@@ -198,6 +307,7 @@ final class SourceListViewController: NSViewController {
     private var rows: [Row] = []
     private var expanded: Set<Int64>
     private var isRebuilding = false
+    /// A read of the playlists has worked (`loadIfNeeded`).
     private var loadedOnce = false
     private var reloadGeneration = 0
     /// The newest read on screen, and the older `reload()` calls waiting for a newer one.
@@ -205,6 +315,24 @@ final class SourceListViewController: NSViewController {
     private var reloadWaiters: [(generation: Int, continuation: CheckedContinuation<Void, Never>)] = []
     /// The playlist whose name is open for typing, and the box over its row.
     private var renaming: (id: Int64, field: SourceRenameField)?
+    /// Callers waiting for a playlist's box to close (`renameEnded`), each resumed once, when it
+    /// does (`renameDidEnd`).
+    private var renameWaiters: [Int64: [CheckedContinuation<Void, Never>]] = [:]
+    /// Names typed over playlists, shown over the index's own until AppController ends each one
+    /// (`endPendingRename`). Without it, any reload before Music has saved the name (another
+    /// playlist edit, a re-ingest) would put the old name back for a while.
+    private var pendingNames: [Int64: String] = [:]
+    /// The plain playlist songs are being dragged over, outlined until the drag moves off it,
+    /// leaves the list or drops. Its id, not its row: a reload during the drag rebuilds the rows,
+    /// and the outline must stay on the same playlist.
+    private var dropTarget: Int64? {
+        didSet {
+            guard dropTarget != oldValue else { return }
+            table.enumerateAvailableRowViews { view, row in
+                (view as? SourceRowView)?.isDropTarget = isDropTarget(row)
+            }
+        }
+    }
     /// What the open right-click menu acts on: the playlist clicked, and where a new one goes.
     private var menuTarget: PlaylistInfo?
     private var menuParent: Int64?
@@ -231,6 +359,11 @@ final class SourceListViewController: NSViewController {
         menu.delegate = self
         menu.autoenablesItems = false
         table.menu = menu
+        // Songs from the track list drop onto playlists. The outline is drawn here
+        // (SourceRowView.isDropTarget), never by AppKit, whose macOS 27 look is a selection.
+        table.registerForDraggedTypes([.oldTunesSongs])
+        table.draggingDestinationFeedbackStyle = .none
+        table.onDragExit = { [weak self] in self?.dropTarget = nil }
         scrollView.documentView = table
 
         // No border of its own: the chrome frame around the source pane is the border.
@@ -255,16 +388,9 @@ final class SourceListViewController: NSViewController {
     }
 
     /// Library and On This Mac, then playlists depth-first in the order the library gave them,
-    /// children under their folder. A playlist whose parent is missing is shown at the top level
-    /// rather than lost. `replacingRow` is where a deleted selection was: the playlist row now
-    /// there (or just above it) is selected instead.
-    private func rebuildRows(replacingRow removedRow: Int? = nil) {
-        let known = Set(playlists.map(\.id))
-        var children: [Int64?: [PlaylistInfo]] = [:]
-        for p in playlists {
-            let parent = p.parentID.flatMap { known.contains($0) && $0 != p.id ? $0 : nil }
-            children[parent, default: []].append(p)
-        }
+    /// children under their folder.
+    private func makeRows() -> [Row] {
+        let children = playlistsByParent()
         var newRows: [Row] = [
             Row(kind: .library, depth: 0, hasChildren: false, isExpanded: false),
             Row(kind: .onThisMac, depth: 0, hasChildren: false, isExpanded: false),
@@ -279,7 +405,26 @@ final class SourceListViewController: NSViewController {
             }
         }
         walk(nil, depth: 0)
+        return newRows
+    }
 
+    /// After a reload: the table rebuilt only when a row would show something else. Otherwise
+    /// the rows take the fresh copies of their playlists (a song count) and nothing is redrawn.
+    private func refreshRows() {
+        let fresh = makeRows()
+        guard fresh.count == rows.count, zip(fresh, rows).allSatisfy({ $0.looksLike($1) }) else {
+            rebuildRows()
+            return
+        }
+        rows = fresh
+    }
+
+    /// The rows again (`makeRows`), the table reloaded and the selection kept. `replacingRow` is
+    /// where a deleted selection was: the playlist row now there (or just above it) is selected
+    /// instead.
+    private func rebuildRows(replacingRow removedRow: Int? = nil) {
+        let newRows = makeRows()
+        rowRebuilds += 1
         isRebuilding = true
         rows = newRows
         table.reloadData()
@@ -295,6 +440,27 @@ final class SourceListViewController: NSViewController {
         isRebuilding = false
         commitSelection()
         placeRenameField()
+    }
+
+    /// Each folder's playlists (the nil key: the top level's) in the order the library gave
+    /// them, each as the list shows it. A playlist whose parent is missing goes at the top level
+    /// rather than being lost.
+    private func playlistsByParent() -> [Int64?: [PlaylistInfo]] {
+        let known = Set(playlists.map(\.id))
+        var children: [Int64?: [PlaylistInfo]] = [:]
+        for p in playlists {
+            let parent = p.parentID.flatMap { known.contains($0) && $0 != p.id ? $0 : nil }
+            children[parent, default: []].append(shown(p))
+        }
+        return children
+    }
+
+    /// The playlist as the list shows it: with a name typed over it while Music saves that.
+    private func shown(_ playlist: PlaylistInfo) -> PlaylistInfo {
+        guard let name = pendingNames[playlist.id] else { return playlist }
+        var shown = playlist
+        shown.name = name
+        return shown
     }
 
     /// The nearest folder above `id` that is currently a visible row.
@@ -385,6 +551,24 @@ final class SourceListViewController: NSViewController {
         return parent.flatMap { id in playlists.contains { $0.id == id && $0.kind == .folder } ? id : nil }
     }
 
+    /// The playlist a drop on `row` adds songs to, if any (see `acceptsSongs`).
+    private func songTarget(at row: Int) -> PlaylistInfo? {
+        guard row >= 0, row < rows.count, let playlist = rows[row].playlist, acceptsSongs(playlist) else { return nil }
+        return playlist
+    }
+
+    /// Only a plain playlist takes songs, and not the one being shown, whose songs are the ones
+    /// in the track list: a drop there would only add them again. Library, On This Mac, folders,
+    /// and smart and Genius playlists take none.
+    private func acceptsSongs(_ playlist: PlaylistInfo) -> Bool {
+        playlist.kind == .regular && scope != .playlist(playlist.id)
+    }
+
+    private func isDropTarget(_ row: Int) -> Bool {
+        guard let dropTarget, row >= 0, row < rows.count else { return false }
+        return rows[row].playlist?.id == dropTarget
+    }
+
     /// Return on Library or On This Mac does nothing, as before playlists could be renamed.
     private func renameSelection() {
         guard let playlist = selectedPlaylist, onRenamePlaylist != nil else { return }
@@ -400,6 +584,7 @@ final class SourceListViewController: NSViewController {
     @objc private func newFolderFromMenu(_ sender: Any?) { onNewPlaylist?(true, menuParent) }
     @objc private func renameFromMenu(_ sender: Any?) { if let menuTarget { beginRename(menuTarget.id) } }
     @objc private func duplicateFromMenu(_ sender: Any?) { if let menuTarget { onDuplicatePlaylist?(menuTarget) } }
+    @objc private func downloadFromMenu(_ sender: Any?) { if let menuTarget { onDownloadPlaylist?(menuTarget) } }
     @objc private func deleteFromMenu(_ sender: Any?) { if let menuTarget { onDeletePlaylist?(menuTarget) } }
 
     // MARK: Renaming in place
@@ -422,23 +607,22 @@ final class SourceListViewController: NSViewController {
     private func endRename(_ id: Int64, _ typed: String?, byKey: Bool) {
         guard let renaming, renaming.id == id else { return }
         self.renaming = nil
+        // Last, so a name typed is shown by the time anyone waiting reads it.
+        defer { renameDidEnd(id) }
         // Once AppKit has finished ending the edit: focus moved during it lands on the window.
         Task { @MainActor [weak self] in
             if byKey, let self { view.window?.makeFirstResponder(table) }
             renaming.field.removeFromSuperview()
         }
-        guard let typed, let index = playlists.firstIndex(where: { $0.id == id }) else { return }
+        guard let typed, let onRenamePlaylist, let old = playlist(id) else { return }
         let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        let old = playlists[index]
         guard !name.isEmpty, name != old.name else { return }
-        // Shows the new name while Music saves it. Not during this event: a click on another
-        // row ends the edit from inside the table's own mouse handling.
-        Task { @MainActor [weak self] in
-            guard let self, let index = playlists.firstIndex(where: { $0.id == id }) else { return }
-            playlists[index].name = name
-            rebuildRows()
-        }
-        onRenamePlaylist?(old, name)
+        // Shows the new name while Music saves it, through any reload until AppController ends
+        // it. The rows are rebuilt later, not during this event: a click on another row ends
+        // the edit from inside the table's own mouse handling.
+        pendingNames[id] = name
+        Task { @MainActor [weak self] in self?.rebuildRows() }
+        onRenamePlaylist(old, name)
     }
 
     private func cancelRename() {
@@ -447,6 +631,32 @@ final class SourceListViewController: NSViewController {
         renaming.field.onEnd = nil
         renaming.field.field.abortEditing()
         renaming.field.removeFromSuperview()
+        renameDidEnd(renaming.id)
+    }
+
+    /// Every way a rename ends comes through `endRename` or `cancelRename`, each of which clears
+    /// `renaming` first, so this runs once per rename.
+    private func renameDidEnd(_ id: Int64) {
+        for waiter in renameWaiters.removeValue(forKey: id) ?? [] { waiter.resume() }
+    }
+
+    /// Watches the window a name box opens in for closing (`windowWillClose`), and no other.
+    private func watchForClose(of window: NSWindow?) {
+        let center = NotificationCenter.default
+        center.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
+        guard let window else { return }
+        center.addObserver(self, selector: #selector(windowWillClose(_:)), name: NSWindow.willCloseNotification,
+                           object: window)
+    }
+
+    /// The window closing keeps a name being typed, as a click elsewhere would, rather than leave
+    /// the box open where nobody sees it. Only closing: hiding OldTunes (⌘H), minimizing and the
+    /// window being ordered out (`viewWillDisappear` comes for each of them) keep the box open with
+    /// what was typed, as AppKit does, and send nothing until the user comes back to it.
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard renaming != nil else { return }
+        view.window?.makeFirstResponder(table)
+        cancelRename()   // a box that never had the keys: nothing typed to keep
     }
 }
 
@@ -456,7 +666,43 @@ extension SourceListViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let view = tableView.makeView(withIdentifier: Self.rowID, owner: self) as? SourceRowView ?? SourceRowView()
         view.identifier = Self.rowID
+        view.isDropTarget = isDropTarget(row)
         return view
+    }
+
+    func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+        (rowView as? SourceRowView)?.isDropTarget = isDropTarget(row)
+    }
+
+    /// Songs from the track list, onto a playlist that takes them (`acceptsSongs`). The row
+    /// under the pointer decides, not AppKit's proposal, which between two rows is a drop above
+    /// the lower one. Never touches the selection: that would switch the track list the songs
+    /// are being dragged from.
+    func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo, proposedRow row: Int,
+                   proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+        let hit = tableView.row(at: tableView.convert(info.draggingLocation, from: nil))
+        guard onAddSongs != nil, info.draggingPasteboard.availableType(from: [.oldTunesSongs]) != nil,
+              let target = songTarget(at: hit) else {
+            dropTarget = nil
+            return []
+        }
+        tableView.setDropRow(hit, dropOperation: .on)
+        dropTarget = target.id
+        return .copy
+    }
+
+    /// Hands the songs over and returns at once: AppController adds them later, on its playlist
+    /// queue, so no alert or Apple Event runs inside the drag.
+    func tableView(_ tableView: NSTableView, acceptDrop info: any NSDraggingInfo, row: Int,
+                   dropOperation: NSTableView.DropOperation) -> Bool {
+        let target = dropTarget
+        dropTarget = nil
+        // Found again by id: a reload since validateDrop may have moved or removed it.
+        guard let target, let onAddSongs, let playlist = self.playlist(target), acceptsSongs(playlist) else { return false }
+        let ids = SongDrag.ids(on: info.draggingPasteboard)
+        guard !ids.isEmpty else { return false }
+        onAddSongs(ids, playlist)
+        return true
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -496,6 +742,10 @@ extension SourceListViewController: NSMenuDelegate {
         // Only a plain playlist: copying a smart playlist's songs would lose its rules.
         add("Duplicate", #selector(duplicateFromMenu(_:)),
             enabled: menuTarget?.kind == .regular && onDuplicatePlaylist != nil)
+        // A playlist's own songs, a smart one's included. Not a folder's: that would be every
+        // playlist inside it.
+        add("Download", #selector(downloadFromMenu(_:)),
+            enabled: (menuTarget?.kind == .regular || menuTarget?.kind == .smart) && onDownloadPlaylist != nil)
         menu.addItem(.separator())
         add("Delete", #selector(deleteFromMenu(_:)), enabled: menuTarget != nil && onDeletePlaylist != nil)
     }

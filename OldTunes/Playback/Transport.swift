@@ -14,11 +14,16 @@ enum TransportError: LocalizedError {
     case unsupported
     /// The audio could not be opened or prepared.
     case notPlayable
+    /// The file is a protected (FairPlay) download: Apple Music songs come down that way, and
+    /// so can others the Music app downloads at Lossless. AVFoundation can't play one; the Music
+    /// app can.
+    case protected
 
     var errorDescription: String? {
         switch self {
         case .unsupported: "This song can't be played by this player."
         case .notPlayable: "This song could not be opened."
+        case .protected: "This song is a protected download, which only the Music app can play."
         }
     }
 }

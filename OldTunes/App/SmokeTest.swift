@@ -271,6 +271,8 @@ struct SmokeTest {
             check("Get Info opens", opened, "")
         }
 
+        await fileMenuChecks()
+
         // File ▸ Add Folder's panel, built by the code the menu item uses but never shown: it offers
         // "Also add to the Music app" as the user last left it, and promises the upload only while
         // Sync Library is on.
@@ -286,6 +288,83 @@ struct SmokeTest {
         Log.info("smoke: SUMMARY \(Self.passed) passed, \(Self.failed) failed; snapshots in \(dir.path)")
         Log.flush()
         NSApp.terminate(nil)
+    }
+
+    /// File ▸ New Playlist, New Playlist from Selection and Download: there, with their keys, and
+    /// on or off for what is selected, as the menu asks AppController before it opens. Validated
+    /// only, never chosen: smoke runs on the real library, and each of them would change it.
+    private func fileMenuChecks() async {
+        guard let file = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "File" })?.submenu else {
+            check("File menu", false, "no File menu")
+            return
+        }
+        let titles = file.items.map { $0.isSeparatorItem ? "—" : $0.title }
+        check("File menu: New Playlist, New Playlist from Selection, Add Folder, Get Info, Download, Close Window",
+              titles == ["New Playlist", "New Playlist from Selection", "—", "Add Folder to Library…", "—", "Get Info",
+                         "Download", "—", "Close Window"], titles.joined(separator: " | "))
+        func item(_ action: Selector) -> NSMenuItem? { file.items.first { $0.action == action } }
+        guard let new = item(#selector(AppController.newPlaylistAction(_:))),
+              let fromSelection = item(#selector(AppController.newPlaylistFromSelectionAction(_:))),
+              let download = item(#selector(AppController.downloadAction(_:))) else {
+            check("File menu's new items reach AppController", false, "an action is missing")
+            return
+        }
+        check("⌘N is New Playlist, ⇧⌘N New Playlist from Selection (an uppercase N), Download has no key; all go to the app",
+              new.keyEquivalent == "n" && new.keyEquivalentModifierMask == [.command]
+              && fromSelection.keyEquivalent == "N" && fromSelection.keyEquivalentModifierMask == [.command]
+              && download.keyEquivalent.isEmpty && [new, fromSelection, download].allSatisfy { $0.target === app },
+              "“\(new.keyEquivalent)” “\(fromSelection.keyEquivalent)” “\(download.keyEquivalent)”")
+        /// New Playlist, New Playlist from Selection, Download: on or off for the selection now.
+        func states() -> (Bool, Bool, Bool) {
+            (app.validateMenuItem(new), app.validateMenuItem(fromSelection), app.validateMenuItem(download))
+        }
+        func describe(_ s: (Bool, Bool, Bool)) -> String {
+            "New Playlist \(s.0 ? "on" : "off"), from Selection \(s.1 ? "on" : "off"), \(download.title) \(s.2 ? "on" : "off")"
+        }
+        /// Selects the song and waits for its row, which the menus' rules need loaded.
+        func select(_ track: Track) async {
+            app.tracks.reveal(track.id)
+            await app.tracks.waitForRows()
+        }
+
+        app.sources.select(.library)
+        _ = await waitFor(3) { app.tracks.query.scope == .library && app.tracks.order.count >= 15_900 }
+        await app.tracks.waitForLoad()
+        let page = (try? await app.index.tracks(ids: Array(app.tracks.order.prefix(200)))) ?? []
+        if let cloud = page.first(where: { $0.isCloudOnly && $0.origin == .musicLibrary }) {
+            await select(cloud)
+            let s = states()
+            check("an iCloud song selected: all three on, and Download reads Download", s == (true, true, true)
+                  && download.title == "Download", describe(s))
+        } else {
+            check("found an iCloud song for the File menu", false, "none in the first 200 rows")
+        }
+
+        app.sources.select(.onThisMac)
+        _ = await waitFor(3) { app.tracks.query.scope == .onThisMac }
+        await app.tracks.waitForLoad()
+        let here = (try? await app.index.tracks(ids: app.tracks.order)) ?? []
+        if let local = here.first(where: { $0.origin == .musicLibrary && $0.fileURL != nil }) {
+            await select(local)
+            let s = states()
+            check("a Music song with its file on this Mac: Download off, the other two on", s == (true, true, false), describe(s))
+        } else {
+            check("found a Music song with its file on this Mac", false, "\(here.count) rows in On This Mac")
+        }
+        if let ours = here.first(where: { $0.origin == .folder }) {
+            await select(ours)
+            let s = states()
+            check("a song only in OldTunes: New Playlist from Selection and Download off", s == (true, false, false), describe(s))
+        } else {
+            Log.info("smoke: no added-folder songs, so the File menu's OldTunes-only case wasn't looked at")
+        }
+        app.tracks.tableView.deselectAll(nil)
+        let empty = states()
+        check("nothing selected: only New Playlist on", empty == (true, false, false), describe(empty))
+
+        app.sources.select(.library)
+        _ = await waitFor(3) { app.tracks.query.scope == .library && app.tracks.order.count >= 15_900 }
+        await app.tracks.waitForLoad()
     }
 
     // MARK: - Helpers

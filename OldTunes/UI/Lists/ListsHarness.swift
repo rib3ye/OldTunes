@@ -97,6 +97,7 @@ private final class ListsBench {
     private var selectionEvents = 0
     private var orderEvents = 0
     private var getInfoEvents: [[Track.ID]] = []
+    private var downloadEvents: [[Track.ID]] = []
     private var scopeEvents: [LibraryScope] = []
 
     /// The mouse-up the press-and-hold timer posts.
@@ -241,6 +242,8 @@ private final class ListsBench {
         tracks.onSelectionChange = { [weak self] _ in self?.selectionEvents += 1 }
         tracks.onOrderChange = { [weak self] _ in self?.orderEvents += 1 }
         tracks.onGetInfo = { [weak self] ids in self?.getInfoEvents.append(ids) }
+        // Recorded, never acted on: the row menu's Download is only on when someone would ask.
+        tracks.onDownload = { [weak self] ids in self?.downloadEvents.append(ids) }
 
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -1209,9 +1212,16 @@ private final class ListsBench {
         guard let menu = table.menu, let delegate = menu.delegate else { return }
         delegate.menuNeedsUpdate?(menu)
         let titles = menu.items.map { $0.isSeparatorItem ? "—" : $0.title }
-        check("row menu has Play, Get Info, Show in Finder", titles == ["Play", "Get Info", "—", "Show in Finder"], "\(titles)")
+        check("row menu has Play, Get Info, Download, Add to Playlist, Show in Finder",
+              titles == ["Play", "Get Info", "—", "Download", "Add to Playlist", "—", "Show in Finder"], "\(titles)")
         let finderEnabled = menu.items.last?.isEnabled
         check("Show in Finder is off for a cloud-only row", finderEnabled == false)
+        // The same row, so a cloud-only one. Off for files and folder songs: the playlists bench.
+        let download = menu.items.first { $0.title == "Download" }
+        downloadEvents.removeAll()
+        if let download, let action = download.action { NSApp.sendAction(action, to: download.target, from: download) }
+        check("Download is on for a cloud-only row and asks about the selection",
+              download?.isEnabled == true && downloadEvents == [[id]], "on \(String(describing: download?.isEnabled)), asked \(downloadEvents)")
         activations.removeAll()
         if let play = menu.items.first, let action = play.action { NSApp.sendAction(action, to: play.target, from: play) }
         getInfoEvents.removeAll()

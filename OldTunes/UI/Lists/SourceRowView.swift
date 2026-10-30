@@ -6,6 +6,27 @@ import AppKit
 final class SourceRowView: NSTableRowView {
     override var isOpaque: Bool { true }
 
+    /// Songs are being dragged over this row's playlist. The source list sets it on every row
+    /// view it hands out, from the playlist's id, because row views are reused.
+    var isDropTarget = false { didSet { if isDropTarget != oldValue { needsDisplay = true } } }
+
+    /// The drop outline goes on after the background and selection. iTunes 4.9's look for a drop
+    /// isn't in any reference OldTunes has, so a 2 pt rounded outline in the accent blue, just
+    /// inside the row, stands in for it (RESEARCH.md §7.4). It has no version for a selected
+    /// row: the selected row is the list being shown, which takes no drop.
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isDropTarget else { return }
+        let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
+        outline.lineWidth = 2
+        ListsPalette.sourceDropOutline.setStroke()
+        outline.stroke()
+    }
+
+    /// Never AppKit's own drop feedback, which macOS 27 draws like a selection. The table's
+    /// feedback style is `.none`, so it shouldn't be asked; this makes sure.
+    override func drawDraggingDestinationFeedback(in dirtyRect: NSRect) {}
+
     override func drawBackground(in dirtyRect: NSRect) {
         Theme.listBG.setFill()
         dirtyRect.intersection(bounds).fill()

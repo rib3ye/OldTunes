@@ -2,12 +2,12 @@ import AppKit
 import ScriptingBridge
 
 // Music.app's scripting dictionary, declared by hand because the project has no bridging header
-// for an sdp-generated Music.h. Only element accessors and the commands `add`, `delete`, `move`
-// and `duplicate` are declared; properties go through KVC by their sdef names so there is one
-// table of keys (see `MusicScriptingSession`). Every member is optional: ScriptingBridge builds
-// these methods at runtime from the sdef, and an optional requirement turns a missing one into
-// nil instead of a crash. Optional members are only callable through the protocol type, hence
-// the `as …Scripting` casts at each call.
+// for an sdp-generated Music.h. Only element accessors and the commands `add`, `delete`, `move`,
+// `duplicate` and `download` are declared; properties go through KVC by their sdef names so
+// there is one table of keys (see `MusicScriptingSession`). Every member is optional:
+// ScriptingBridge builds these methods at runtime from the sdef, and an optional requirement
+// turns a missing one into nil instead of a crash. Optional members are only callable through
+// the protocol type, hence the `as …Scripting` casts at each call.
 
 @objc private protocol MusicApplicationScripting {
     @objc optional func sources() -> SBElementArray
@@ -37,6 +37,10 @@ import ScriptingBridge
     @objc optional func moveTo(_ location: SBObject)
     /// `duplicate` (core/clon). A track duplicated to a playlist is added to that playlist.
     @objc optional func duplicateTo(_ location: SBObject?) -> SBObject?
+    /// `download` (hookDwnl): `- (void) download` on every item in an sdp-generated Music.h. A
+    /// cloud song comes down to this Mac. Void, but sent with kAEWaitReply like every
+    /// ScriptingBridge call, so it returns when Music answers or the session's timeout passes.
+    @objc optional func download()
 }
 
 extension SBApplication: MusicApplicationScripting {}
@@ -64,24 +68,28 @@ private final class ScriptingErrorRecorder: NSObject, SBApplicationDelegate {
 
 /// One conversation with Music.app. Not Sendable: ScriptingBridge objects belong to the thread
 /// that made them, so a session is created, used and dropped inside one `run` on the scripting
-/// queue (`MusicAppTagWriter`, `MusicAppLibraryAdder`, `MusicPlaylistEditor`).
+/// queue (`MusicAppTagWriter`, `MusicAppLibraryAdder`, `MusicPlaylistEditor`,
+/// `MusicSongDownloader`).
 ///
 /// Property reads and writes, `add`, `delete` (artwork, playlists, and the live hand-off check's
-/// own test song), and `make` (a plain Apple Event), `move` and `duplicate` for playlists only.
-/// This type deliberately has no way to send play, pause, next track or any other playback
-/// command (§6.5): Music answering those would take over Now Playing.
+/// own test song), `make` (a plain Apple Event) and `move` for playlists only, `duplicate` of
+/// songs into playlists, and `download` for iCloud songs. This type deliberately has no way to
+/// send play, pause, next track or any other playback command (§6.5): Music answering those
+/// would take over Now Playing.
 final class MusicScriptingSession {
     /// What the conversation is for, so a refusal names the right consequence.
     enum Purpose {
         case savingTags
         case addingSongs
         case editingPlaylists
+        case downloadingSongs
 
         var deniedReason: String {
             switch self {
             case .savingTags: MusicAutomation.deniedReason
             case .addingSongs: MusicAutomation.addDeniedReason
             case .editingPlaylists: MusicAutomation.playlistDeniedReason
+            case .downloadingSongs: MusicAutomation.downloadDeniedReason
             }
         }
 
@@ -90,21 +98,28 @@ final class MusicScriptingSession {
             case .savingTags: MusicAutomation.unavailableReason
             case .addingSongs: MusicAutomation.addUnavailableReason
             case .editingPlaylists: MusicAutomation.playlistUnavailableReason
+            case .downloadingSongs: MusicAutomation.downloadUnavailableReason
             }
         }
 
         /// What errAENoSuchObject means here.
         var missingReason: String {
             self == .editingPlaylists ? "Music couldn’t find the playlist. It may have been deleted already."
-                : "Music couldn’t find the song. It may have been removed from the library."
+                : Self.songMissingReason
         }
+
+        /// …and what it means for a song's own lookup (`track(persistentID:)`), whatever the
+        /// conversation is for: an add to a playlist looks each of its songs up too.
+        static let songMissingReason = "Music couldn’t find the song. It may have been removed from the library."
     }
 
     private let app: SBApplication
     private let errors = ScriptingErrorRecorder()
     private let purpose: Purpose
 
-    init(for purpose: Purpose = .savingTags) throws {
+    /// `timeout`: how long to wait for each of Music's answers, in seconds; nil takes the
+    /// purpose's own. Only the live download check passes one, to learn how long Music takes.
+    init(for purpose: Purpose = .savingTags, timeout: TimeInterval? = nil) throws {
         guard let app = SBApplication(bundleIdentifier: MusicAutomation.bundleID) else {
             throw TagEditError(message: purpose.unavailableReason, code: -600)
         }
@@ -113,8 +128,15 @@ final class MusicScriptingSession {
         // event; make that launch hidden and in the background too.
         app.launchFlags = [.dontAddToRecents, .dontSwitch, .andHide]
         // Ticks (1/60 s). A whose-query over 16k tracks is fast; 20 s means Music is stuck. An add
-        // may wait on Music copying a long file into its Media folder, so it gets a minute.
-        app.timeout = (purpose == .addingSongs ? 60 : 20) * 60
+        // may wait on Music copying a long file into its Media folder, so it gets a minute. Whether
+        // Music answers `download` at once or only once the file is down isn't known yet
+        // (RESEARCH.md §10-R7): 30 s, and a download that runs out of time may still come down.
+        let seconds = switch purpose {
+        case .addingSongs: 60
+        case .downloadingSongs: 30
+        case .savingTags, .editingPlaylists: 20
+        }
+        app.timeout = timeout.map { Int(($0 * 60).rounded()) } ?? seconds * 60
         self.app = app
         self.purpose = purpose
     }
@@ -159,6 +181,16 @@ final class MusicScriptingSession {
         [-1743, -1742, -1712, -600, -609, -1708].contains(code)   // -1708: errAEEventNotHandled
     }
 
+    /// For the loops that send one request per song (downloads, adds to a playlist): whether the
+    /// songs after this error should be sent at all. As `endsConversation`, with two changes.
+    /// Music also answers -1708 to turn down one request, so only OldTunes's own finding that the
+    /// command is missing stops. And -10004 stops: it means a request the sandbox doesn't let
+    /// through (§3.1), which every other song's would be too.
+    static func stopsBatch(_ error: TagEditError) -> Bool {
+        if error.missingCommand || error.code == -10004 { return true }
+        return error.code != -1708 && endsConversation(error.code)
+    }
+
     /// The library track with this persistent ID, matched by `whose persistent ID is "…"`.
     /// Never matched by title/artist/album: duplicates are common in a 20-year library.
     func track(persistentID: Int64) throws -> SBObject {
@@ -173,7 +205,8 @@ final class MusicScriptingSession {
         }
         try check("Music’s library couldn’t be read")
         let track = firstMatch(in: tracks, NSPredicate(format: "persistentID == %@", hex))
-        try check("Music couldn’t look up the song \(hex)")
+        // errAENoSuchObject here means this song, in an add too, not the playlist.
+        try check("Music couldn’t look up the song \(hex)", missing: Purpose.songMissingReason)
         guard let track else {
             throw TagEditError(message: "Music has no song with this ID (\(hex)). It may have been removed from the library.")
         }
@@ -214,6 +247,10 @@ final class MusicScriptingSession {
     /// `folder playlist id 23456 of source id 64`, and a source has no folder playlist element in
     /// its dictionary, so from a sandboxed app Music refuses every event sent to that (-10004).
     /// So only the playlist's id is looked up, and the playlist then addressed by it.
+    ///
+    /// No such playlist throws -1728 (errAENoSuchObject), the code Music answers for an object
+    /// that isn't there, so an add can tell a playlist that is gone from a passing failure
+    /// (`MusicPlaylistEditor.retryWontHelp`).
     func playlist(persistentID: Int64) throws -> SBObject {
         let hex = MusicPersistentID.hex(persistentID)
         _ = errors.take()
@@ -226,7 +263,8 @@ final class MusicScriptingSession {
             .array(byApplying: NSSelectorFromString("id")) as? [Any]
         try check("Music couldn’t look up the playlist \(hex)")
         guard let id = ids?.first, let playlist = playlists.object(withID: id) as? SBObject else {
-            throw TagEditError(message: "Music has no playlist with this ID (\(hex)). It may have been deleted already.")
+            throw TagEditError(message: "Music has no playlist with this ID (\(hex)). It may have been deleted already.",
+                               code: -1728)
         }
         return playlist
     }
@@ -352,6 +390,19 @@ final class MusicScriptingSession {
         return count
     }
 
+    /// Adds one library song, as `track(persistentID:)` found it, to the end of a plain
+    /// playlist: copyTracks' `duplicate … to` for a single song. Music adds it again if it is
+    /// already there, without asking.
+    func add(_ track: SBObject, to playlist: SBObject) throws {
+        _ = errors.take()
+        guard let duplicate = (track as MusicItemScripting).duplicateTo else {
+            throw TagEditError(message: "Music’s scripting dictionary has no “duplicate” command, so songs can’t be added to playlists.",
+                               code: -1708, missingCommand: true)
+        }
+        _ = duplicate(playlist)
+        try check("Music couldn’t add the song")
+    }
+
     /// Music deletes a folder together with every playlist in it.
     func deletePlaylist(_ playlist: SBObject) throws {
         _ = errors.take()
@@ -360,6 +411,18 @@ final class MusicScriptingSession {
         }
         delete()
         try check("Music couldn’t delete the playlist")
+    }
+
+    /// Asks Music to download `item`, a cloud song as `track(persistentID:)` found it, to this
+    /// Mac. Music fetches the file in the background and never says when it is done.
+    func download(_ item: SBObject) throws {
+        _ = errors.take()
+        guard let download = (item as MusicItemScripting).download else {
+            throw TagEditError(message: "Music’s scripting dictionary has no “download” command, so songs can’t be downloaded.",
+                               code: -1708, missingCommand: true)
+        }
+        download()
+        try check("Music couldn’t download the song")
     }
 
     func name(of item: SBObject, failure: String = "Music couldn’t read the song’s name") throws -> String? {
@@ -421,10 +484,12 @@ final class MusicScriptingSession {
         }
     }
 
-    /// Throws the error ScriptingBridge reported since the last check, if any.
-    private func check(_ what: String) throws {
+    /// Throws the error ScriptingBridge reported since the last check, if any. `missing`: what
+    /// errAENoSuchObject means for this step, when not the purpose's (`describe`).
+    private func check(_ what: String, missing: String? = nil) throws {
         guard let error = errors.take() else { return }
-        throw TagEditError(message: Self.describe(error, what: what, purpose: purpose), code: Self.number(of: error))
+        throw TagEditError(message: Self.describe(error, what: what, purpose: purpose, missing: missing),
+                           code: Self.number(of: error))
     }
 
     /// The Apple Event error number in a ScriptingBridge error.
@@ -434,8 +499,10 @@ final class MusicScriptingSession {
     }
 
     /// One sentence for the per-song failure list. The few codes a user can act on get their
-    /// own wording; anything else keeps Music's own description and number.
-    static func describe(_ error: Error, what: String, purpose: Purpose = .savingTags) -> String {
+    /// own wording; anything else keeps Music's own description and number. `missing` words
+    /// errAENoSuchObject for a step that looked for something other than what the purpose is
+    /// about (a song's lookup while editing playlists); nil takes the purpose's own.
+    static func describe(_ error: Error, what: String, purpose: Purpose = .savingTags, missing: String? = nil) -> String {
         let ns = error as NSError
         let number = Self.number(of: error)
         switch number {
@@ -452,7 +519,7 @@ final class MusicScriptingSession {
         case -1712:   // errAETimeout
             return "\(what): Music didn’t answer in time. Try again when Music isn’t busy."
         case -1728:   // errAENoSuchObject
-            return "\(what): \(purpose.missingReason)"
+            return "\(what): \(missing ?? purpose.missingReason)"
         case -600, -609:  // procNotFound, connectionInvalid
             return purpose.unavailableReason
         default:

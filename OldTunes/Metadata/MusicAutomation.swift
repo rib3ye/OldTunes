@@ -37,6 +37,12 @@ enum MusicAutomation {
 
     static let playlistUnavailableReason = "Music couldn’t be opened, so OldTunes can’t change your playlists right now."
 
+    /// And for downloading iCloud songs.
+    static let downloadDeniedReason = "OldTunes isn’t allowed to control Music, so it can’t download songs. "
+        + "Turn it on in System Settings ▸ Privacy & Security ▸ Automation ▸ OldTunes ▸ Music."
+
+    static let downloadUnavailableReason = "Music couldn’t be opened, so OldTunes can’t download songs right now."
+
     static var isMusicRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }

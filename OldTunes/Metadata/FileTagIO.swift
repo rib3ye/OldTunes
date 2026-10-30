@@ -6,6 +6,11 @@ struct TagEditError: LocalizedError, Sendable {
     var message: String
     /// The Apple Event error number, when Music's reply carried one.
     var code: Int? = nil
+    /// OldTunes found the command missing from Music's scripting dictionary before sending
+    /// anything. Its code is -1708 (errAEEventNotHandled) like the other such checks, but Music
+    /// answers one request it won't carry out with -1708 too, and only this one means no request
+    /// of that kind can work (`MusicScriptingSession.stopsBatch`).
+    var missingCommand = false
     var errorDescription: String? { message }
 }
 

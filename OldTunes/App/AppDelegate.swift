@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "musictag":  await MusicTagLiveTest.run()
             case "musicadd":  await MusicAddLiveTest.run()
             case "musicplaylists": await MusicPlaylistLiveTest.run()
+            case "musicdownload": await MusicDownloadLiveTest.run()
             case "musicaccess": await MusicAccessProbe.run()
             default:          await AppAssembly.launch()
             }

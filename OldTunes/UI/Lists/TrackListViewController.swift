@@ -7,6 +7,9 @@ import AppKit
 /// from `library.tracks(ids:)` only for the visible rows plus a margin, cached in a small LRU, so
 /// drawing a screenful never touches all 15,900 rows. Everything proportional to the library
 /// (the id→row map, selection restore, change detection) is computed off the main thread.
+///
+/// Songs drag from here onto the source list's playlists (SongDrag), and the right-click menu
+/// can download them or add them to a playlist; the list only asks, through its closures.
 @MainActor
 final class TrackListViewController: NSViewController {
 
@@ -23,6 +26,16 @@ final class TrackListViewController: NSViewController {
     /// at once; if no reload follows within two seconds (the write failed) they are re-read from
     /// the library and show whatever it holds.
     var onToggleChecked: ((_ ids: [Track.ID], _ checked: Bool) -> Void)?
+    /// Right-click ▸ Download: the selection, in row order. The menu sees only the rows it has
+    /// loaded, so the caller keeps just the cloud-only Music songs, and there may be none.
+    var onDownload: (([Track.ID]) -> Void)?
+    /// Right-click ▸ Add to Playlist ▸ a playlist: the selection, in row order, and its id.
+    var onAddToPlaylist: ((_ ids: [Track.ID], _ playlist: Int64) -> Void)?
+    /// Right-click ▸ Add to Playlist ▸ New Playlist: a new playlist with the selection, in row order.
+    var onNewPlaylistFromSelection: (([Track.ID]) -> Void)?
+    /// The playlists Add to Playlist ▸ offers: the source list's tree (`playlistTree`). Read each
+    /// time the menu opens, which can't wait for the library.
+    var playlistMenu: (() -> [PlaylistMenuEntry])?
 
     /// Setting it reloads. Search-only changes are debounced 140 ms; any newer query cancels the
     /// one in flight, and a result that lands late is dropped, never shown.
@@ -58,6 +71,14 @@ final class TrackListViewController: NSViewController {
     var selectedIDs: [Track.ID] {
         table.selectedRowIndexes.compactMap { $0 < order.count ? order[$0] : nil }
     }
+
+    /// Whether the selection may hold a song Music can download, a cloud-only Music song; Download
+    /// is on when it may. Only loaded rows can say no, and a selection over 50 isn't looked
+    /// through, so this can be true for a selection with none; the caller then finds that out.
+    var selectionMayHaveCloudSongs: Bool { selectionMayHave { $0.isCloudOnly && $0.origin == .musicLibrary } }
+    /// Whether the selection may hold a song that can go in a Music playlist, one that isn't only
+    /// in OldTunes; New Playlist from Selection is on when it may. The same "may" as above.
+    var selectionMayHaveMusicSongs: Bool { selectionMayHave { $0.origin == .musicLibrary && $0.persistentID != nil } }
 
     /// The Genre | Artist | Album browser. Hiding it clears its filters, as iTunes did.
     var isBrowserVisible = false {
@@ -99,6 +120,18 @@ final class TrackListViewController: NSViewController {
         let rows = IndexSet([old, id].compactMap { $0 }.compactMap { indexOfID[$0] })
         guard indicator >= 0, !rows.isEmpty else { return }
         table.reloadData(forRowIndexes: rows, columnIndexes: IndexSet(integer: indicator))
+    }
+
+    /// The blue cloud on the songs Music has been asked to download (RESEARCH.md §6.9), until
+    /// the caller sees each one's file and drops it from the set. Kept here, not on the cached
+    /// rows, which every reload replaces. Redraws only the Name cells of the songs that changed.
+    func setDownloading(_ ids: Set<Track.ID>) {
+        let changed = downloadingIDs.symmetricDifference(ids)
+        downloadingIDs = ids
+        let name = table.column(withIdentifier: TrackColumn.name.identifier)
+        let rows = IndexSet(changed.compactMap { indexOfID[$0] })
+        guard name >= 0, !rows.isEmpty else { return }
+        table.reloadData(forRowIndexes: rows, columnIndexes: IndexSet(integer: name))
     }
 
     /// After `.libraryDidChange`: refetch everything, keeping the selection and scroll position.
@@ -179,6 +212,45 @@ final class TrackListViewController: NSViewController {
         }
     }
 
+    // MARK: Dragging (module-internal, so the benches can look at the picture)
+
+    /// What a drag of songs offers inside OldTunes: a copy, onto a playlist. The table has no
+    /// getter for its masks outside a drag, so the playlists bench reads these.
+    static let songDragInside: NSDragOperation = .copy
+    /// And outside it, nothing: what a drag carries means nothing to Finder or another app
+    /// (SongDrag).
+    static let songDragOutside: NSDragOperation = []
+
+    /// What a drag of `row` shows: the part of the row on screen, in table coordinates, and a
+    /// picture of its cells as an unselected row draws them. Nil when the row is off screen or
+    /// still loading. Not the row as it looks while dragged: it is selected, and the selection's
+    /// white text would vanish over the white lists.
+    func draggingImage(forRow row: Int) -> (frame: NSRect, image: NSImage)? {
+        guard row >= 0, row < order.count else { return nil }
+        let visible = table.rect(ofRow: row).intersection(scrollView.unobscuredDocumentRect)
+        guard !visible.isEmpty, let track = shownRow(order[row]) else { return nil }
+        let frame = NSIntegralRect(visible)
+        let picture = SongDrag.picture(size: frame.size, scale: table.window?.backingScaleFactor ?? 2,
+                                       appearance: table.effectiveAppearance) {
+            guard let cg = NSGraphicsContext.current?.cgContext else { return }
+            for (index, column) in table.tableColumns.enumerated() where !column.isHidden {
+                guard let kind = TrackColumn(column) else { continue }
+                let cellFrame = table.frameOfCell(atColumn: index, row: row)
+                guard cellFrame.intersects(frame) else { continue }
+                // A cell of its own, so the one on screen keeps its selected look.
+                let cell = TrackCellView(column: kind)
+                cell.frame = NSRect(origin: .zero, size: cellFrame.size)
+                cell.configure(track: track, indicator: indicator(for: kind, of: track.id),
+                               downloading: downloadingIDs.contains(track.id))
+                cg.saveGState()
+                cg.translateBy(x: cellFrame.minX - frame.minX, y: cellFrame.minY - frame.minY)
+                cell.draw(cell.bounds)
+                cg.restoreGState()
+            }
+        }
+        return picture.map { (frame, $0) }
+    }
+
     // MARK: - Private state
 
     private let library: any LibraryReading
@@ -217,6 +289,8 @@ final class TrackListViewController: NSViewController {
     private var isRestoringSelection = false
     private var nowPlayingID: Track.ID?
     private var nowPlayingIsPlaying = false
+    /// Songs Music has been asked to download, drawn with the blue cloud (`setDownloading`).
+    private var downloadingIDs = Set<Track.ID>()
 
     private var browserGenerations: [BrowserField: Int] = [:]
     /// The leftmost browser pane a load still owes a refresh. Accumulated across loads, because
@@ -317,6 +391,12 @@ final class TrackListViewController: NSViewController {
         table.onReturn = { [weak self] in self?.activateSelection() }
         table.onCommandI = { [weak self] in self?.getInfo(nil) }
         table.interceptMouseDown = { [weak self] event in self?.handleCheckboxClick(event) ?? false }
+        // Songs drag onto the source list's playlists, and only inside OldTunes. A drag starts
+        // sideways, toward the source list; a vertical drag still extends the selection, as it
+        // always has.
+        table.setDraggingSourceOperationMask(Self.songDragInside, forLocal: true)
+        table.setDraggingSourceOperationMask(Self.songDragOutside, forLocal: false)
+        table.verticalMotionCanBeginDrag = false
 
         for entry in TrackColumnLayout.load().entries {
             guard let kind = TrackColumn(rawValue: entry.id) else { continue }
@@ -622,6 +702,14 @@ final class TrackListViewController: NSViewController {
         cache.peek(id) ?? staleCache?.peek(id)
     }
 
+    /// Whether any selected row may pass `test`. A row not loaded yet may. So may a selection of
+    /// over 50: like Show in Finder, a menu looks at 50 rows at most.
+    private func selectionMayHave(_ test: (Track) -> Bool) -> Bool {
+        let rows = table.selectedRowIndexes
+        if rows.count > 50 { return true }
+        return rows.contains { $0 < order.count && (shownRow(order[$0]).map(test) ?? true) }
+    }
+
     /// The ids of every row that has a view.
     private func preparedRowIDs() -> [Track.ID] {
         let order = self.order
@@ -767,6 +855,22 @@ final class TrackListViewController: NSViewController {
         NSWorkspace.shared.activateFileViewerSelecting(Array(urls))
     }
 
+    @objc private func downloadFromMenu(_ sender: Any?) {
+        let ids = selectedIDs
+        if !ids.isEmpty { onDownload?(ids) }
+    }
+
+    @objc private func addToPlaylistFromMenu(_ sender: NSMenuItem) {
+        let ids = selectedIDs
+        guard let playlist = (sender.representedObject as? NSNumber)?.int64Value, !ids.isEmpty else { return }
+        onAddToPlaylist?(ids, playlist)
+    }
+
+    @objc private func newPlaylistFromMenu(_ sender: Any?) {
+        let ids = selectedIDs
+        if !ids.isEmpty { onNewPlaylistFromSelection?(ids) }
+    }
+
     @objc private func toggleColumn(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String,
               let column = table.tableColumns.first(where: { $0.identifier.rawValue == id }),
@@ -815,10 +919,35 @@ extension TrackListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell = TrackCellView(column: kind)
             cellsCreated += 1
         }
-        let indicator: TrackCellView.Indicator =
-            kind == .indicator && id == nowPlayingID ? (nowPlayingIsPlaying ? .playing : .paused) : .none
-        cell.configure(track: track, indicator: indicator)
+        cell.configure(track: track, indicator: indicator(for: kind, of: id),
+                       downloading: kind == .name && downloadingIDs.contains(id))
         return cell
+    }
+
+    private func indicator(for kind: TrackColumn, of id: Track.ID) -> TrackCellView.Indicator {
+        kind == .indicator && id == nowPlayingID ? (nowPlayingIsPlaying ? .playing : .paused) : .none
+    }
+
+    /// One item per dragged row, from its id alone, so rows not loaded yet drag too.
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
+        guard row >= 0, row < order.count else { return nil }
+        return SongDrag.item(for: order[row])
+    }
+
+    /// Pictures for the dragged rows on screen; the rest drag along unseen, so a ⌘A drag of the
+    /// whole library doesn't draw a picture for every one of its rows. The items come in
+    /// `rowIndexes` order (NSTableView.h).
+    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
+                   willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+        let rows = Array(rowIndexes)
+        session.enumerateDraggingItems(options: [], for: tableView, classes: [NSPasteboardItem.self],
+                                       searchOptions: [:]) { item, index, _ in
+            if index < rows.count, let picture = draggingImage(forRow: rows[index]) {
+                item.setDraggingFrame(picture.frame, contents: picture.image)
+            } else {
+                item.setDraggingFrame(item.draggingFrame, contents: nil)
+            }
+        }
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
@@ -864,6 +993,8 @@ extension TrackListViewController: NSTableViewDataSource, NSTableViewDelegate {
 // MARK: - Menus
 
 extension TrackListViewController: NSMenuDelegate {
+    /// The header's Columns menu, or the row menu: Play, Get Info, Download, Add to Playlist ▸ and
+    /// Show in Finder, each acting on the selection (a right-click has already selected its row).
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         if menu === table.headerView?.menu {
@@ -888,10 +1019,75 @@ extension TrackListViewController: NSMenuDelegate {
         info.isEnabled = !ids.isEmpty
         menu.addItem(info)
         menu.addItem(.separator())
+        let download = NSMenuItem(title: "Download", action: #selector(downloadFromMenu(_:)), keyEquivalent: "")
+        download.target = self
+        download.isEnabled = onDownload != nil && selectionMayHaveCloudSongs
+        menu.addItem(download)
+        let add = NSMenuItem(title: "Add to Playlist", action: nil, keyEquivalent: "")
+        add.target = self
+        add.submenu = addToPlaylistMenu(hasSelection: !ids.isEmpty)
+        add.isEnabled = !ids.isEmpty && (onAddToPlaylist != nil || onNewPlaylistFromSelection != nil)
+        menu.addItem(add)
+        menu.addItem(.separator())
         let finder = NSMenuItem(title: "Show in Finder", action: #selector(showInFinder(_:)), keyEquivalent: "")
         finder.target = self
         finder.isEnabled = ids.prefix(50).contains { shownRow($0)?.fileURL != nil }
         menu.addItem(finder)
+    }
+
+    /// Add to Playlist ▸: New Playlist, then the source list's plain playlists, folders as
+    /// submenus. Built whole here, and no submenu gets a delegate: menuNeedsUpdate would rebuild
+    /// any menu it was handed as the row menu. The playlist being shown is left out, as a drop
+    /// on it is refused, and so is a folder left with nothing in it.
+    private func addToPlaylistMenu(hasSelection: Bool) -> NSMenu {
+        let menu = NSMenu(title: "Add to Playlist")
+        menu.autoenablesItems = false
+        let new = NSMenuItem(title: "New Playlist", action: #selector(newPlaylistFromMenu(_:)), keyEquivalent: "")
+        new.target = self
+        // Off when every song it can see is only in OldTunes: the playlist would stay empty.
+        new.isEnabled = onNewPlaylistFromSelection != nil && selectionMayHaveMusicSongs
+        menu.addItem(new)
+        var shown: Int64?
+        if case .playlist(let id) = query.scope { shown = id }
+        let tree = Self.addable(playlistMenu?() ?? [], leavingOut: shown)
+        guard !tree.isEmpty else { return menu }
+        menu.addItem(.separator())
+        addPlaylistItems(tree, to: menu, enabled: onAddToPlaylist != nil && hasSelection)
+        return menu
+    }
+
+    private func addPlaylistItems(_ entries: [PlaylistMenuEntry], to menu: NSMenu, enabled: Bool) {
+        for entry in entries {
+            let item = NSMenuItem(title: entry.playlist.name, action: nil, keyEquivalent: "")
+            item.target = self
+            item.isEnabled = enabled
+            if entry.playlist.kind == .folder {
+                let folder = NSMenu(title: entry.playlist.name)
+                folder.autoenablesItems = false
+                addPlaylistItems(entry.children, to: folder, enabled: enabled)
+                item.submenu = folder
+            } else {
+                item.action = #selector(addToPlaylistFromMenu(_:))
+                item.representedObject = NSNumber(value: entry.playlist.id)
+            }
+            menu.addItem(item)
+        }
+    }
+
+    /// Only what can take songs: plain playlists other than `shown`, and the folders still
+    /// holding one of them.
+    private static func addable(_ entries: [PlaylistMenuEntry], leavingOut shown: Int64?) -> [PlaylistMenuEntry] {
+        entries.compactMap { entry in
+            switch entry.playlist.kind {
+            case .regular:
+                return entry.playlist.id == shown ? nil : PlaylistMenuEntry(playlist: entry.playlist, children: [])
+            case .folder:
+                let inside = addable(entry.children, leavingOut: shown)
+                return inside.isEmpty ? nil : PlaylistMenuEntry(playlist: entry.playlist, children: inside)
+            case .smart, .genius:
+                return nil
+            }
+        }
     }
 }
 

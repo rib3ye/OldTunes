@@ -23,16 +23,85 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
 
     /// Refreshes run one at a time, in call order.
     private var refreshChain: Task<IngestReport, Never>?
+    /// Refreshes running or waiting their turn in the chain, so `refreshIfIdle` can tell.
+    private var refreshesInFlight = 0
+    /// Of those, the ones that haven't begun. Each reads Music's playlists after whatever ran
+    /// before it, so while one waits, neither the stale-playlists retry nor `refreshSoon` needs a
+    /// pass of its own.
+    private var refreshesWaiting = 0
     /// Finished refreshes and when the last one started; lets a caller see that a change
     /// notification really led to a re-ingest.
     private(set) var refreshCount = 0
     private(set) var lastRefreshStarted: Date?
+    /// When the newest refresh that worked started, set once it has written Music's library to the
+    /// index. One that failed (no permission, iTunesLibrary or the index write failing) sets
+    /// `lastRefreshStarted` too, but read nothing in: the download watch, whose last re-read before
+    /// it gives up on a song must have read the library, goes by this (`DownloadWatch.tick`).
+    private(set) var lastWrittenRefreshStarted: Date?
     private var changeObserver: (any NSObjectProtocol)?
+    /// The re-ingest a change notification has scheduled, until it starts.
     private var pendingChange: Task<Void, Never>?
+    /// When the first of the change notifications still waiting for that re-ingest came.
+    private var firstUnhandledChange: ContinuousClock.Instant?
+    /// When the last change notification came, to tell a new run of them from one still going.
+    private var lastChange: ContinuousClock.Instant?
+    /// Re-ingests in a row that the max wait started, since Music was last quiet for 5 s.
+    private var forcedChanges = 0
+    /// The pass the stale-playlists retry has scheduled, until it starts (`retryStalePlaylists`).
+    private var pendingRetry: Task<Void, Never>?
+    /// Passes in a row that found Music's playlists edited while they read them (`staleRetryWait`).
+    private var stalePasses = 0
 
     /// How long Music must be quiet before a change notification triggers a re-ingest. The
     /// notification is coarse and arrives in bursts while Music.app writes (§8.5).
     static let changeDebounce: Duration = .seconds(5)
+    /// The longest a re-ingest waits while Music keeps posting. A long download batch or a long
+    /// Add to Playlist may never leave Music quiet for 5 s, and its songs should still show up as
+    /// they land rather than all at the end.
+    static let changeMaxWait: Duration = .seconds(30)
+    /// Such a job can go on for hours, and a re-ingest takes 5 to 18 s, a MusicKit request among
+    /// it, so while the changes keep coming the max wait doubles after each re-ingest it starts,
+    /// up to this (`changeWait`).
+    static let changeMaxWaitCap: Duration = .seconds(5 * 60)
+
+    /// The max wait after `forced` re-ingests in a row that it started: 30 s, then twice as long
+    /// each time, up to 5 minutes.
+    static func changeMaxWait(after forced: Int) -> Duration {
+        // 30 s × 2⁴ is past the cap already, so the shift stays small.
+        min(changeMaxWaitCap, changeMaxWait * (1 << min(max(forced, 0), 4)))
+    }
+
+    /// The change debounce's rule, on durations alone so the library bench can run it.
+    /// A notification comes `sinceFirst` after the first one still waiting, and `sinceLast` after
+    /// the one before it (nil: none yet). `forced`: the re-ingests in a row the max wait started;
+    /// Music quiet for more than 5 s before this one starts that count over, which matters when
+    /// the last run of changes ended on a forced re-ingest and left nothing waiting. Returns how
+    /// long to wait before the re-ingest, 5 s of quiet but no longer than the max wait from the
+    /// first, and what `forced` becomes if that re-ingest starts: one more when the max wait cut
+    /// the 5 s short, 0 when Music was quiet for them, which puts the max wait back to 30 s.
+    static func changeWait(sinceFirst: Duration, sinceLast: Duration?,
+                           forced: inout Int) -> (wait: Duration, forcedOnStart: Int) {
+        if sinceLast.map({ $0 > changeDebounce }) ?? true { forced = 0 }
+        let wait = max(.zero, min(changeDebounce, changeMaxWait(after: forced) - sinceFirst))
+        return (wait, wait < changeDebounce ? forced + 1 : 0)
+    }
+
+    /// The stale-playlists retry's rule, on counts alone so the library bench can run it. A pass
+    /// that found Music's playlists edited while it read them (`stale`) left them alone (§6.8),
+    /// and nothing else may read them again: Music's last notification can have come before the
+    /// edit, and Music may post nothing while a long add goes in. `stalePasses`: such passes in a
+    /// row, counting this one; a pass that read them whole sets it back to 0 and needs no retry
+    /// (nil). The first retry comes 5 s later, as a notification's re-ingest would. While every
+    /// pass finds another edit (an add whose chunks land faster than iTunesLibrary loads), the
+    /// wait is 30 s, then twice as long each time, up to 5 minutes, as the max wait is.
+    static func staleRetryWait(stale: Bool, stalePasses: inout Int) -> Duration? {
+        guard stale else {
+            stalePasses = 0
+            return nil
+        }
+        stalePasses += 1
+        return stalePasses == 1 ? changeDebounce : changeMaxWait(after: stalePasses - 2)
+    }
 
     init(index: LibraryIndex) {
         self.index = index
@@ -41,14 +110,44 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
     // MARK: - LibraryIngesting
 
     func refresh() async -> IngestReport {
+        // This pass reads Music's playlists after any that found them edited, so a retry still
+        // waiting has nothing left to do (one pass at a time).
+        pendingRetry?.cancel()
+        pendingRetry = nil
         let previous = refreshChain
+        refreshesInFlight += 1
+        refreshesWaiting += 1
         let task = Task { [weak self] () -> IngestReport in
             _ = await previous?.value
             guard let self else { return IngestReport(status: .failed("The library was closed.")) }
             return await self.performRefresh()
         }
         refreshChain = task
-        return await task.value
+        let report = await task.value
+        refreshesInFlight -= 1
+        return report
+    }
+
+    /// A re-ingest, unless one is already running, waiting its turn, or scheduled by a change
+    /// notification: for a caller that only needs the index to be fairly fresh, such as watching
+    /// for downloads to land in case Music doesn't say. Nil when skipped. A stale-playlists retry
+    /// still waiting doesn't skip it: this re-ingest reads the playlists again in its place.
+    func refreshIfIdle() async -> IngestReport? {
+        guard refreshesInFlight == 0, pendingChange == nil else { return nil }
+        return await refresh()
+    }
+
+    /// A re-ingest that reads the library from now on, for a caller that knows the index is behind
+    /// Music: unlike `refreshIfIdle`, it doesn't skip while a pass runs, which may have read the
+    /// library too early, but queues behind it (`refresh`). Skipped (nil) only when a pass is
+    /// already waiting its turn, or a change notification has scheduled one: that pass starts
+    /// later, so it reads what this one would. It never queues a pass behind one already waiting.
+    /// For an add that ends with Music maybe still adding a song, or with its playlist gone
+    /// (`AppController.addRereadsLibrary`): a running pass that found the playlists edited while it
+    /// read them would read them again only after its back-off (`staleRetryWait`).
+    func refreshSoon() async -> IngestReport? {
+        guard refreshesWaiting == 0, pendingChange == nil else { return nil }
+        return await refresh()
     }
 
     func addFolder(_ url: URL) async throws -> Int {
@@ -196,19 +295,72 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
         Log.info("library: watching \(Notification.Name.ITLibraryDidChange.rawValue)")
     }
 
+    /// Re-ingests 5 s after the last notification, but never later than the max wait after the
+    /// first one still waiting: 30 s, and longer while Music keeps posting (`changeWait`).
     private func libraryDidChange() {
+        let now = ContinuousClock.now
+        let first = firstUnhandledChange ?? now
+        firstUnhandledChange = first
+        let (wait, forced) = Self.changeWait(sinceFirst: now - first, sinceLast: lastChange.map { now - $0 },
+                                             forced: &forcedChanges)
+        lastChange = now
         pendingChange?.cancel()
         pendingChange = Task { [weak self] in
-            try? await Task.sleep(for: Self.changeDebounce)
+            try? await Task.sleep(for: wait)
             guard !Task.isCancelled, let self else { return }
-            Log.info("library: Music library changed; re-ingesting")
-            _ = await self.refresh()
+            await self.changeSettled(forced: forced)
         }
+    }
+
+    /// The wait is over: notifications from here on count toward the next re-ingest.
+    /// `forced`: the re-ingests in a row the max wait has now started (`changeWait`).
+    private func changeSettled(forced: Int) async {
+        // A notification that came while this task woke has scheduled a newer one.
+        guard !Task.isCancelled else { return }
+        pendingChange = nil
+        firstUnhandledChange = nil
+        forcedChanges = forced
+        Log.info("library: Music library changed; re-ingesting" + (forced == 0 ? "" :
+                 " without 5 s of quiet, \(forced) in a row; the next waits up to " +
+                 "\(Self.changeMaxWait(after: forced).components.seconds) s"))
+        _ = await refresh()
+    }
+
+    /// Reads Music's playlists again `wait` from now (`staleRetryWait`), unless a pass is
+    /// already waiting its turn, which reads them anyway. Not through the change debounce:
+    /// Music posted nothing, and there each retry came 5 s after the pass before it. Whichever
+    /// comes first, this pass or a notification's, calls the other off (`refresh`,
+    /// `retrySettled`), so the two never queue two passes.
+    private func retryStalePlaylists(after wait: Duration) {
+        guard refreshesWaiting == 0 else {
+            Log.info("library: playlists changed while they were being read; the re-ingest waiting its turn reads them again")
+            return
+        }
+        Log.info("library: playlists changed while they were being read; reading them again in \(wait.components.seconds) s")
+        pendingRetry?.cancel()
+        pendingRetry = Task { [weak self] in
+            try? await Task.sleep(for: wait)
+            guard !Task.isCancelled, let self else { return }
+            await self.retrySettled()
+        }
+    }
+
+    /// The retry's wait is over. A change notification still waiting for its own re-ingest is
+    /// read by this pass too, so that one is called off.
+    private func retrySettled() async {
+        // A pass queued while this task woke has taken its place.
+        guard !Task.isCancelled else { return }
+        pendingRetry = nil
+        pendingChange?.cancel()
+        pendingChange = nil
+        firstUnhandledChange = nil
+        _ = await refresh()
     }
 
     // MARK: - Refresh
 
     private func performRefresh() async -> IngestReport {
+        refreshesWaiting -= 1
         let started = Date()
         lastRefreshStarted = started
         defer { refreshCount += 1 }
@@ -224,6 +376,9 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
         async let musicKit = Self.fetchMusicKitLibrary()
         async let subscription = try? MusicKitSource.subscription()
 
+        // Read before the snapshot, so a playlist edit applied while iTunesLibrary is being read
+        // (an Add to Playlist going in, say) isn't overwritten by a snapshot older than it.
+        let playlistStamp = try? await index.playlistEditStamp()
         let snapshot: ITLibSource.Snapshot
         do {
             snapshot = try await itlib.load()
@@ -246,7 +401,10 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
         }
 
         do {
-            let write = try await index.replaceMusicLibrary(snapshot.records, playlists: snapshot.playlists)
+            let write = try await index.replaceMusicLibrary(snapshot.records, playlists: snapshot.playlists,
+                                                            playlistStamp: playlistStamp)
+            // Music's songs are in the index as this pass read them.
+            lastWrittenRefreshStarted = started
             // The change notification is coarse (§8.5), so many re-ingests find nothing new; a post
             // then would only make the UI reload for nothing.
             if write.changedIndex { await LibraryIndex.postDidChange() }
@@ -268,7 +426,15 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
             Log.info("library: index write inserted=\(write.inserted) updated=\(write.updated) " +
                      "unchanged=\(write.unchanged) deleted=\(write.deleted) " +
                      "playlists rewritten=\(write.playlistsRewritten) (\(write.playlistItems) items) " +
+                     "edited while reading=\(write.playlistsStale) " +
                      "analyzed=\(write.analyzed) in \(Self.ms(write.seconds))")
+            // A playlist edit landed while Music's playlists were read, so they were left alone.
+            // Another pass reads them again, later each time while edits keep landing, and gets
+            // through once they stop (`staleRetryWait`). Here, after the write's own line ("edited
+            // while reading=true"), so the retry's line follows it in the log.
+            if let wait = Self.staleRetryWait(stale: write.playlistsStale, stalePasses: &stalePasses) {
+                retryStalePlaylists(after: wait)
+            }
         } catch {
             report.status = .failed("The library index could not be written: \(error.localizedDescription)")
             Log.error("library: index write failed: \(error)")

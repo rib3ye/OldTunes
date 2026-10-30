@@ -8,8 +8,8 @@ import MusicKit
 // Ownership:
 //   Library/   implements LibraryReading, LibraryWriting, LibraryIngesting, CloudSongResolving
 //   Playback/  implements PlaybackControlling
-//   Metadata/  implements TagEditing, MusicLibraryAdding and PlaylistEditing (all script
-//              Music.app), and owns the Get Info window
+//   Metadata/  implements TagEditing, MusicLibraryAdding, PlaylistEditing and SongDownloading
+//              (all script Music.app), and owns the Get Info window
 //   UI/        consumes all of the above; implements nothing here
 
 // MARK: - Querying the library
@@ -82,7 +82,8 @@ protocol LibraryWriting: Sendable {
     func setChecked(ids: [Track.ID], checked: Bool) async throws
     /// A playlist change Music has already made, shown at once instead of after Music's change
     /// notification and the re-ingest (about 7 s). That re-ingest then rewrites every playlist
-    /// from Music's own database. Posts `.libraryDidChange`.
+    /// from Music's own database. Posts `.libraryDidChange`, saying which playlist for
+    /// `.songsAdded` (`LibraryChange.songsAddedTo`).
     func apply(_ edit: PlaylistEdit) async throws
 }
 
@@ -105,24 +106,89 @@ enum PlaylistEdit: Sendable, Equatable {
     case renamed(Int64, to: String)
     /// Takes every playlist inside a folder with it, as Music does.
     case deleted(Int64)
+    /// Songs Music appended to a plain playlist, by persistent ID, in the order they went in,
+    /// repeats included.
+    case songsAdded(Int64, persistentIDs: [Int64])
 }
 
 // MARK: - Playlist commands
 
-/// The source list's right-click commands. MusicKit can't make, rename or delete playlists on
-/// macOS (RESEARCH.md §6.1), but Music's scripting can, and Sync Library carries the change to
-/// iCloud Music Library like any change made in Music. Playlists are named by persistent id,
-/// never by name: two playlists can share one. Errors carry a user-facing description.
+/// The source list's right-click commands, and adding songs to playlists. MusicKit can't make,
+/// rename or delete playlists on macOS, or put songs in them (RESEARCH.md §6.1), but Music's
+/// scripting can, and Sync Library carries the change to iCloud Music Library like any change
+/// made in Music. Playlists are named by persistent id, never by name: two playlists can share
+/// one. Errors carry a user-facing description.
 protocol PlaylistEditing: Sendable {
     /// Makes an empty playlist, or a folder, named `name` inside the folder `parent` (nil: the
     /// top level). Returns it as made.
     func makePlaylist(named name: String, isFolder: Bool, in parent: Int64?) async throws -> PlaylistInfo
-    func renamePlaylist(_ id: Int64, to name: String) async throws
+    /// `continuing` is true for a name typed over the playlist an add is filling, sent between
+    /// two of its chunks. Like those chunks (`addSongs`), it never starts Music: if Music has
+    /// quit, it throws, code -600, since quitting Music is how a user stops a long add.
+    func renamePlaylist(_ id: Int64, to name: String, continuing: Bool) async throws
     /// A new playlist named `name` beside `playlist`, with its songs in its order. Plain
     /// playlists only: a copy of a smart playlist's songs would lose its rules.
     func duplicatePlaylist(_ playlist: PlaylistInfo, named name: String) async throws -> PlaylistInfo
     /// A folder goes with every playlist in it.
     func deletePlaylist(_ id: Int64) async throws
+    /// Appends songs, by persistent ID and in this order, to the end of the plain playlist
+    /// `playlist`, one `duplicate … to` per song (RESEARCH.md §6.10). One chunk of an add, in one
+    /// conversation with Music: callers send about 25 songs at a time, so a tag save or a
+    /// download never waits long behind a big add (other playlist commands wait for the whole
+    /// add), and each chunk can reach the index as it goes in. Music adds a song again if it is
+    /// already there, so callers leave those out.
+    ///
+    /// `continuing` is false for an add's first chunk, which starts Music (hidden) if it isn't
+    /// running and asks for permission if OldTunes never had it, as every playlist command does.
+    /// It is true for the chunks after that, which never start Music: quitting Music is how a
+    /// user stops a long add, so if Music has quit, the add stops there.
+    ///
+    /// Never throws: what went in and why the rest didn't are in the report, so a partial add
+    /// still reaches the index.
+    func addSongs(_ persistentIDs: [Int64], to playlist: Int64, continuing: Bool) async -> PlaylistAddReport
+}
+
+extension PlaylistEditing {
+    /// An add's first chunk, or a whole add of a few songs.
+    func addSongs(_ persistentIDs: [Int64], to playlist: Int64) async -> PlaylistAddReport {
+        await addSongs(persistentIDs, to: playlist, continuing: false)
+    }
+
+    /// A rename on its own, which starts Music (hidden) if it isn't running, as every playlist
+    /// command does.
+    func renamePlaylist(_ id: Int64, to name: String) async throws {
+        try await renamePlaylist(id, to: name, continuing: false)
+    }
+}
+
+/// What Music did with one chunk of an add to a playlist.
+struct PlaylistAddReport: Sendable, Equatable {
+    /// One song Music turned down.
+    struct Refusal: Sendable, Equatable {
+        var persistentID: Int64
+        /// User-facing.
+        var reason: String
+    }
+
+    /// Persistent IDs Music put in, in the order they went in.
+    var added: [Int64] = []
+    /// Songs Music turned down. The add went on past each of them, unless it was the first song
+    /// the add asked Music to take (a playlist Music takes no songs into) or the third in a row
+    /// turned down the same way.
+    var refused: [Refusal] = []
+    /// Why the add stopped before the end (permission, Music quit, Music not answering, a
+    /// playlist Music takes no songs into or no longer has); user-facing. The song it stopped at
+    /// is in `refused` when Music turned it down, or is `unanswered`, which may still go in;
+    /// otherwise it, like every song after it, is in neither list and didn't go in.
+    var stopReason: String?
+    /// The song whose `duplicate` Music didn't answer in time, where the add stopped. Music still
+    /// carries out an event it didn't answer in time, so this song may still go in.
+    var unanswered: Int64? = nil
+    /// Trying again would stop the same way: Music takes no songs into this playlist (it turned
+    /// down the first song, or three in a row the same way), the playlist is gone from Music, the
+    /// sandbox doesn't let the request through (-10004, -1742), or Music's dictionary has no
+    /// `duplicate`.
+    var retryWontHelp = false
 }
 
 // MARK: - Ingest
@@ -192,7 +258,8 @@ protocol MusicLibraryAdding: Sendable {
     /// Gets Music ready: running (hidden), and OldTunes allowed to control it, asking if it never
     /// has. Nil when ready; otherwise the user-facing reason nothing can be added.
     func prepare() async -> String?
-    /// Adds one file to Music's library (not to a playlist).
+    /// Adds one file to Music's library (not to a playlist). Never starts Music: if it has quit
+    /// since `prepare()`, the answer is `.stopped`.
     func add(_ file: URL) async -> MusicAddOutcome
 }
 
@@ -218,6 +285,40 @@ struct MusicHandoffReport: Sendable {
 /// Finds the MusicKit `Song` that can stream a track (fallback steps 2 and 3, RESEARCH.md §1).
 protocol CloudSongResolving: Sendable {
     func cloudSong(for track: Track) async -> Song?
+}
+
+// MARK: - Downloading songs
+
+/// What Music said when asked to download one song.
+enum MusicDownloadOutcome: Sendable, Equatable {
+    /// Music took the request. The file comes down in the background.
+    case requested
+    /// Music didn't answer in time. It may still be downloading the song; send nothing more for
+    /// now. User-facing.
+    case unanswered(String)
+    /// Music turned this song down. User-facing. `code`: the error number Music turned the
+    /// `download` down with, which three refusals in a row must share to stop a batch (Music's
+    /// words may name the song); nil when the song couldn't be looked up, so no `download` went
+    /// out, which says nothing about the songs after it, or when the error had no number.
+    case refused(String, code: Int? = nil)
+    /// Music stopped answering, quit, or OldTunes lost permission. User-facing. Send nothing more.
+    /// `retryWontHelp`: choosing Download again would stop the same way (the sandbox doesn't let
+    /// the request through, or Music's dictionary has no `download`).
+    case stopped(String, retryWontHelp: Bool = false)
+}
+
+/// Download: brings iCloud songs down to this Mac. MusicKit can't on macOS (RESEARCH.md §1), but
+/// Music's scripting `download` command (hookDwnl) can (§6.9). Music then fetches the file in the
+/// background and never says when it is done, so callers watch the library for the song to
+/// become a file.
+protocol SongDownloading: Sendable {
+    /// Gets Music ready: running (hidden), and OldTunes allowed to control it, asking if it never
+    /// has. Nil when ready; otherwise the user-facing reason nothing can be downloaded.
+    func prepare() async -> String?
+    /// Asks Music to download one song. Returns once Music has answered (or didn't in time), not
+    /// when the file is on this Mac. Never starts Music: if it has quit since `prepare()`, the
+    /// answer is `.stopped`.
+    func download(_ persistentID: Int64) async -> MusicDownloadOutcome
 }
 
 // MARK: - Playback
@@ -313,6 +414,15 @@ protocol TagEditing: Sendable {
 // MARK: - Events
 
 extension Notification.Name {
-    /// Posted on the main thread after the index changes (ingest, folder add, tag edit).
+    /// Posted on the main thread after the index changes (ingest, folder add, tag edit, a playlist
+    /// edit). Anything may have changed, unless `userInfo` says what did (`LibraryChange`).
     static let libraryDidChange = Notification.Name("OldTunes.libraryDidChange")
+}
+
+/// What `.libraryDidChange`'s `userInfo` can say about a change.
+enum LibraryChange {
+    /// An `Int64`: the playlist songs were just added to (`PlaylistEdit.songsAdded`, one chunk of
+    /// an add), and nothing else changed: no song, no other playlist's songs, and no playlist's
+    /// name, kind or place. Only a list showing that playlist has anything new.
+    static let songsAddedTo = "OldTunes.libraryDidChange.songsAddedTo"
 }

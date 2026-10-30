@@ -476,7 +476,15 @@ final class PlaybackCoordinator: PlaybackControlling {
         }
         if announce { show() }
         var reason = "it is not on this Mac and is not in your iCloud Music Library."
-        if let url = track.fileURL, FileManager.default.fileExists(atPath: url.path), Self.isShut(url) {
+        if let url = track.fileURL, Self.isDirectory(url) {
+            // No file to play here: straight to iCloud.
+            reason = Self.protectedReason
+            // By persistent ID (16 hex digits, as Music and the other logs write it) and
+            // extension, never the package's name: Music names its media files after the song.
+            let song = track.persistentID.map { "song " + String(format: "%016llX", UInt64(bitPattern: $0)) }
+                ?? "folder song \(track.id)"
+            Log.info("playback: \(song) is a package (.\(url.pathExtension)), not a file (a protected download); trying iCloud")
+        } else if let url = track.fileURL, FileManager.default.fileExists(atPath: url.path), Self.isShut(url) {
             // Still worth trying iCloud below: a Music song outside ~/Music may stream from there.
             reason = Self.shutReason
             Log.info("playback: the sandbox won't let OldTunes open \(url.path)")
@@ -571,9 +579,25 @@ final class PlaybackCoordinator: PlaybackControlling {
         if error is TimeoutError {
             return fromCloud ? "iCloud took too long to start it." : "its file took too long to open."
         }
+        if (error as? TransportError) == .protected { return protectedReason }
         // AVFoundation reports a file it may not read in NSURLErrorDomain too (-1102).
         if fromCloud, (error as NSError).domain == NSURLErrorDomain { return "iCloud can't be reached right now." }
         return fromCloud ? "iCloud couldn\u{2019}t prepare it for playback." : "its file could not be opened."
+    }
+
+    /// Why a protected download can't play from its file. The song then streams from iCloud, so
+    /// this shows only when that fails too. Apple Music songs come down protected (FairPlay), and
+    /// so can others the Music app downloads at Lossless. Never worked around with AVFoundation's
+    /// content authorization, which opens the Music app to ask, and Music would then take over
+    /// Now Playing.
+    static let protectedReason = "it is a protected download, which only the Music app can play."
+
+    /// A directory where the song's file should be: how the Music app keeps some protected
+    /// downloads (a `.movpkg` package). AVFoundation can't play one, and `isShut` can't tell,
+    /// since open(2) succeeds on a directory.
+    static func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
     /// Why a song whose file the sandbox keeps shut can't play. Adding the folder it is in opens
@@ -691,7 +715,8 @@ final class PlaybackCoordinator: PlaybackControlling {
     }
 
     /// When the next song is also a file, queue it behind this one so its decode overlaps. The
-    /// next song is the next checked one, since the end of this song passes over the rest.
+    /// next song is the next checked one, since the end of this song passes over the rest. A
+    /// protected download isn't queued (LocalTransport.preload), nor a package (`isDirectory`).
     private func refreshPreload() {
         guard active === local, state.repeatMode != .one, let index = step(from: cursor, by: 1) else { return }
         let ids = stretch(from: index, direction: 1, count: 32)
@@ -700,8 +725,9 @@ final class PlaybackCoordinator: PlaybackControlling {
             guard let self, let rows = try? await self.library.tracks(ids: ids),
                   gen == self.generation, self.active === self.local,
                   let track = rows.first(where: \.isChecked),
-                  let url = track.fileURL, FileManager.default.fileExists(atPath: url.path) else { return }
-            self.local.preload(url)
+                  let url = track.fileURL, FileManager.default.fileExists(atPath: url.path),
+                  !Self.isDirectory(url) else { return }
+            await self.local.preload(url)
         }
     }
 

@@ -124,10 +124,12 @@ final class LibraryIndex: LibraryReading, LibraryWriting, Sendable {
         "[" + ids.map(String.init).joined(separator: ",") + "]"
     }
 
-    /// Tells the UI the index changed. Always on the main thread (Contracts.swift).
-    static func postDidChange() async {
+    /// Tells the UI the index changed. Always on the main thread (Contracts.swift). `songsAddedTo`:
+    /// the change was only songs added to that playlist (`LibraryChange`).
+    static func postDidChange(songsAddedTo playlist: Int64? = nil) async {
         await MainActor.run {
-            NotificationCenter.default.post(name: .libraryDidChange, object: nil)
+            NotificationCenter.default.post(name: .libraryDidChange, object: nil,
+                                            userInfo: playlist.map { [LibraryChange.songsAddedTo: $0] })
         }
     }
 }

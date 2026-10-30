@@ -34,6 +34,19 @@ enum ListsPalette {
     static let sourceSelectionOffEdgeTop = Theme.hex(0x7D7D7D, dark: 0x4E5054)
     /// The cloud badge on cloud-only rows; the same gray as the reference's row arrow circles.
     static let cloudBadge = Theme.hex(0x9A9A9A, dark: 0x7A7C81)
+    /// The badge while Music downloads the song: the same cloud in blue. iTunes 4.9 never
+    /// downloaded, so there is no reference for it; this is OldTunes's stand-in (RESEARCH.md
+    /// §7.4). By day the 4.9 selection blue, Theme.trkSel. By night the checked box's own blue,
+    /// AquaStyle.blueGel's band above its middle: trkSel's night value, drawn this small, read
+    /// more violet than the checked box beside it and the sorted column above it (RESEARCH.md §7.7).
+    static let cloudRequested = Theme.hex(0x3C80DF, dark: 0x4A84D0)
+
+    // MARK: Drop feedback
+
+    /// The 2 pt outline round a playlist while songs are dragged over it. No 4.9 reference shows
+    /// one, so it is OldTunes's stand-in too, in the same blues as `cloudRequested` (RESEARCH.md
+    /// §7.4, §7.7).
+    static let sourceDropOutline = Theme.hex(0x3C80DF, dark: 0x4A84D0)
 
     // MARK: Aqua scroller
 

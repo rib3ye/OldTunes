@@ -10,6 +10,8 @@ final class TrackCellView: NSTableCellView {
     private var text = ""
     private var dimmed = false
     private var cloudBadge = false
+    /// Name cells only: the badge is drawn blue, because Music is downloading the song.
+    private var downloading = false
     private var indicator: Indicator = .none
     /// Name cells only: whether the row has data (so a box is drawn) and the song's checkbox.
     private var hasCheckbox = false
@@ -47,23 +49,30 @@ final class TrackCellView: NSTableCellView {
     }
 
     /// Nil `track` means the row's data is still being fetched: draw nothing until it lands.
-    func configure(track: Track?, indicator: Indicator) {
+    ///
+    /// `downloading`: Music has been asked to download the song (RESEARCH.md §6.9). Its cloud
+    /// turns blue until the re-read shows the file. A row that turns `.missing` meanwhile (Music's
+    /// library may list the file before all of it has landed) keeps the blue cloud too, rather
+    /// than going dim with no badge, as if the download had failed.
+    func configure(track: Track?, indicator: Indicator, downloading: Bool = false) {
         let newText: String
-        var newDimmed = false, newBadge = false, newHasBox = false, newChecked = true
+        var newDimmed = false, newBadge = false, newHasBox = false, newChecked = true, newDownloading = false
         if let track {
             newText = Self.text(for: column, of: track)
             newDimmed = track.bucket == .missing
-            newBadge = column == .name && track.isCloudOnly
+            newDownloading = column == .name && downloading && (track.isCloudOnly || track.bucket == .missing)
+            newBadge = column == .name && (track.isCloudOnly || newDownloading)
             newHasBox = column == .name
             newChecked = track.isChecked
         } else {
             newText = ""
         }
-        guard newText != text || newDimmed != dimmed || newBadge != cloudBadge || indicator != self.indicator
-              || newHasBox != hasCheckbox || newChecked != checked else { return }
+        guard newText != text || newDimmed != dimmed || newBadge != cloudBadge || newDownloading != self.downloading
+              || indicator != self.indicator || newHasBox != hasCheckbox || newChecked != checked else { return }
         text = newText
         dimmed = newDimmed
         cloudBadge = newBadge
+        self.downloading = newDownloading
         hasCheckbox = newHasBox
         checked = newChecked
         self.indicator = indicator
@@ -73,6 +82,8 @@ final class TrackCellView: NSTableCellView {
     /// The configured text, for tests.
     var displayedText: String { text }
     var showsCloudBadge: Bool { cloudBadge }
+    /// The badge is the blue one: the song is being downloaded.
+    var showsDownloading: Bool { downloading }
     var isDimmed: Bool { dimmed }
     var indicatorState: Indicator { indicator }
     /// Nil when this cell draws no checkbox (not Name, or the row is still loading).
@@ -112,7 +123,8 @@ final class TrackCellView: NSTableCellView {
         if cloudBadge {
             textRect.size.width -= Self.badgeWidth
             let badge = NSRect(x: bounds.width - Self.badgeWidth + 1, y: 4, width: 13, height: 9)
-            ListGlyphs.cloud(in: badge, color: onSelection ? Theme.textOnSelection : ListsPalette.cloudBadge)
+            let tint = downloading ? ListsPalette.cloudRequested : ListsPalette.cloudBadge
+            ListGlyphs.cloud(in: badge, color: onSelection ? Theme.textOnSelection : tint)
         }
         guard !text.isEmpty, textRect.width > 0 else { return }
         (text as NSString).draw(in: textRect, withAttributes: Self.attributes(color: color, alignment: column.alignment))

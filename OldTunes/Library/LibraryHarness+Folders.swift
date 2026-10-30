@@ -253,8 +253,7 @@ extension LibraryHarnessBench {
         let before = await ingest.refreshCount
         var lastPost = Date()
         for _ in 0..<3 {
-            DistributedNotificationCenter.default().postNotificationName(
-                .ITLibraryDidChange, object: nil, userInfo: nil, deliverImmediately: true)
+            notices.post()
             lastPost = Date()
             try await Task.sleep(for: .milliseconds(700))
         }
@@ -267,6 +266,293 @@ extension LibraryHarnessBench {
         let delay = await ingest.lastRefreshStarted.map { $0.timeIntervalSince(lastPost) } ?? -1
         check("3 change notifications → exactly one debounced refresh", after == before + 1 && delay >= 4.9,
               "\(after - before) refresh(es), started \(fmt(delay)) s after the last post")
+    }
+
+    /// Notifications that never let up for 5 s, as while Music brings down a long Download or
+    /// takes a long Add to Playlist: one every 3 s for 36 s. The re-ingest must still start about
+    /// 30 s after the first (LibraryIngest.changeMaxWait), while they are still coming, so songs
+    /// show up as they land rather than only at the end.
+    func checkChangeMaxWait() async throws {
+        await ingest.startWatchingForChanges()
+        // Past the previous check's refresh and any notification it left waiting.
+        try await Task.sleep(for: .seconds(6))
+        let before = await ingest.refreshCount
+        let firstPost = Date()
+        var lastPost = firstPost
+        var firstStart: Date?
+        for _ in 0..<13 {
+            notices.post()
+            lastPost = Date()
+            for _ in 0..<12 {
+                try await Task.sleep(for: .milliseconds(250))
+                if firstStart == nil, let started = await ingest.lastRefreshStarted, started > firstPost { firstStart = started }
+            }
+        }
+        // The re-ingest started meanwhile, and one more for the notifications after it began.
+        let deadline = Date().addingTimeInterval(120)
+        while await ingest.refreshCount < before + 2, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        try await Task.sleep(for: .seconds(3))
+        let after = await ingest.refreshCount
+        let wait = firstStart.map { $0.timeIntervalSince(firstPost) } ?? -1
+        check("change notifications that keep coming still re-ingest within 30 s of the first, not after the last",
+              (29...33).contains(wait) && (firstStart.map { $0 < lastPost } ?? false),
+              "the first re-ingest started \(fmt(wait)) s after the first of 13 posts, "
+              + "\(fmt(lastPost.timeIntervalSince(firstPost))) s of posts; \(after - before) refreshes in all")
+    }
+
+    /// The change debounce's rule (LibraryIngest.changeWait), on durations alone: while Music
+    /// keeps posting, the max wait starts at 30 s and doubles after each re-ingest it starts, up to
+    /// 5 minutes, and 5 s of quiet puts it back. Otherwise an hours-long Download or a ⌘A add
+    /// would re-ingest the library every 30 s throughout (RESEARCH.md §6.9). Posts nothing.
+    func checkChangeBackOff() {
+        func ms(_ d: Duration) -> Int { Int(d.components.seconds) * 1000 + Int(d.components.attoseconds / 1_000_000_000_000_000) }
+        /// The debounce on a made-up clock, as LibraryIngest runs it: Music's notices at `posts`
+        /// (ms); when each re-ingest starts.
+        func reingests(_ posts: [Int]) -> [Int] {
+            var forced = 0, first: Int?, last: Int?, pending: (fire: Int, forced: Int)?
+            var starts: [Int] = []
+            for t in posts {
+                if let p = pending, p.fire < t {
+                    starts.append(p.fire)
+                    (forced, first, pending) = (p.forced, nil, nil)
+                }
+                let since = t - (first ?? t)
+                first = first ?? t
+                let next = LibraryIngest.changeWait(sinceFirst: .milliseconds(since), sinceLast: last.map { .milliseconds(t - $0) },
+                                                    forced: &forced)
+                last = t
+                pending = (t + ms(next.wait), next.forcedOnStart)
+            }
+            return starts + (pending.map { [$0.fire] } ?? [])
+        }
+        let maxWaits = (0...6).map { ms(LibraryIngest.changeMaxWait(after: $0)) / 1000 }
+        let stream = Array(stride(from: 0, through: 900_000, by: 2_800))
+        let backedOff = reingests(stream)
+        let quietThenMore = reingests(stream + Array(stride(from: 1_000_000, through: 1_040_000, by: 2_800)))
+        // A run that ends just before a forced re-read leaves nothing waiting to settle: the quiet
+        // before the next run is what puts the wait back.
+        let endedForced = reingests(Array(stride(from: 0, through: 28_000, by: 2_800)) + Array(stride(from: 100_000, through: 140_000, by: 2_800)))
+        check("while Music posts every 2.8 s for 15 minutes, the library is re-read 30, 60, 120, 240 and 300 s after the "
+              + "first notice each waited for, then once 5 s after the last, not every 30 s; 5 s of quiet puts it back to 30 s, "
+              + "even after a run that ended on a forced re-read",
+              maxWaits == [30, 60, 120, 240, 300, 300, 300] && backedOff == [30_000, 90_800, 212_400, 452_800, 753_600, 903_800]
+              && quietThenMore.suffix(2) == [1_030_000, 1_044_200] && endedForced == [30_000, 130_000, 144_200],
+              "max waits \(maxWaits) s; re-reads at \(backedOff.map { fmt(Double($0) / 1000) }) s; after the quiet "
+              + "\(quietThenMore.suffix(2).map { fmt(Double($0) / 1000) }) s; after a forced end \(endedForced) ms")
+        let benchOwn = reingests([0, 700, 1_400] + (0..<13).map { 20_000 + 3_000 * $0 })
+        check("…and this bench's own two change checks see what they expect on it: one re-read 5 s after a burst, then one "
+              + "30 s after the first of 13 posts 3 s apart, and one 5 s after the last",
+              benchOwn == [6_400, 50_000, 61_000], "re-reads at \(benchOwn) ms")
+    }
+
+    /// The stale-playlists retry's rule (LibraryIngest.staleRetryWait), on counts alone: a re-ingest
+    /// that found Music's playlists edited while it read them reads them again 5 s later, and while
+    /// every pass finds another edit (an add whose chunks land faster than iTunesLibrary loads, with
+    /// Music posting nothing) 30 s later, then twice as long each time, up to 5 minutes, not every
+    /// 5 s for the whole add; a pass that reads them whole ends the run (RESEARCH.md §6.10).
+    /// Posts nothing.
+    func checkStaleRetryBackOff() {
+        var passes = 0
+        func wait(stale: Bool) -> Int? { LibraryIngest.staleRetryWait(stale: stale, stalePasses: &passes).map { Int($0.components.seconds) } }
+        let inARow = (0..<7).map { _ in wait(stale: true) }
+        let counted = passes
+        let whole = wait(stale: false)
+        let afterWhole = passes
+        let next = [wait(stale: true), wait(stale: true)]
+        check("a re-ingest that found the playlists edited while it read them reads them again 5 s later; while each pass "
+              + "finds another edit, 30, 60, 120, 240, then 300 s later; one that reads them whole asks for none, and the "
+              + "next edit is read again 5 s later",
+              inARow == [5, 30, 60, 120, 240, 300, 300] && counted == 7 && whole == nil && afterWhole == 0 && next == [5, 30],
+              "waits \(inARow.map { $0.map(String.init) ?? "none" }) s, \(counted) in a row; then \(whole.map(String.init) ?? "none"), "
+              + "\(afterWhole) in a row; then \(next.map { $0.map(String.init) ?? "none" }) s")
+    }
+
+    /// How a failed check whose counts a library-changed notice can upset is told: Music posts
+    /// its own on its own (iCloud Library syncing, a play count; it keeps running hidden once
+    /// OldTunes starts it), and each starts a re-ingest. Nil: a plain failure, the check having
+    /// heard only the notices it posted itself. Otherwise how many were Music's, for a BLOCKED.
+    nonisolated static func musicNotices(heard: Int, posted: Int) -> Int? {
+        heard > posted ? heard - posted : nil
+    }
+
+    /// `check`, for a check that counts re-ingests (`musicNotices`): a failure while Music posted
+    /// notices of its own is BLOCKED, to run again, not FAIL.
+    func checkCounting(_ name: String, _ ok: Bool, _ detail: String, heard: Int, posted: Int) {
+        guard !ok, let own = Self.musicNotices(heard: heard, posted: posted) else {
+            return check(name, ok, detail)
+        }
+        blocked(name, "Music posted \(own) \(own == 1 ? "notice" : "notices") of its own during the check; run again. \(detail)")
+    }
+
+    /// `checkCounting`, with the notices heard around a check that began at `began`
+    /// (`LibraryHarnessNotices.counts`).
+    func checkCounting(_ name: String, _ ok: Bool, _ detail: String, since began: Date) {
+        let counts = notices.counts(since: began)
+        checkCounting(name, ok, detail, heard: counts.heard, posted: counts.posted)
+    }
+
+    /// LibraryIngest.refreshIfIdle, through which the download watch asks for its re-reads
+    /// (RESEARCH.md §6.9): a re-ingest when none is running, waiting its turn, or scheduled by a
+    /// change notice, and nothing otherwise. Posts one library-changed notice, as
+    /// checkChangeWatching does; a running OldTunes re-reads its own library once for it. Its
+    /// counts are exact, so a part that fails while Music posted notices of its own is BLOCKED
+    /// (`checkCounting`).
+    func checkRefreshIfIdle() async throws {
+        await ingest.startWatchingForChanges()
+        let began = Date()
+        // Past the previous check's re-ingests and anything they left waiting.
+        try await Task.sleep(for: .seconds(6))
+        var before = await ingest.refreshCount
+        let idle = await ingest.refreshIfIdle()
+        var after = await ingest.refreshCount
+        checkCounting("refreshIfIdle with nothing running or coming: one re-ingest, and its report",
+                      idle?.status == .ok && after == before + 1,
+                      "\(idle.map { "\($0.status)" } ?? "skipped"), \(after - before) refreshes", since: began)
+
+        before = await ingest.refreshCount
+        let mark = Date()
+        let running = Task { await self.ingest.refresh() }
+        let started = Date().addingTimeInterval(10)
+        while (await ingest.lastRefreshStarted ?? .distantPast) <= mark, Date() < started {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let during = await ingest.refreshIfIdle()
+        _ = await running.value
+        try await Task.sleep(for: .seconds(1))
+        after = await ingest.refreshCount
+        checkCounting("…while one runs: skipped, and only that one re-ingest happens",
+                      during == nil && after == before + 1, "\(during == nil ? "skipped" : "ran one"), \(after - before) refreshes",
+                      since: began)
+
+        // A notice schedules a re-ingest 5 s later; one asked for meanwhile is that one.
+        let heardBefore = notices.total
+        before = await ingest.refreshCount
+        notices.post()
+        let posted = Date()
+        let arrival = Date().addingTimeInterval(3)
+        while notices.total == heardBefore, Date() < arrival { try await Task.sleep(for: .milliseconds(20)) }
+        // The ingest heard it as this bench did, and has handed it to the debounce by now.
+        try await Task.sleep(for: .milliseconds(300))
+        let pending = await ingest.refreshIfIdle()
+        let settled = Date().addingTimeInterval(60)
+        while await ingest.refreshCount == before, Date() < settled { try await Task.sleep(for: .milliseconds(250)) }
+        try await Task.sleep(for: .seconds(3))   // room for a second, unwanted one
+        after = await ingest.refreshCount
+        let delay = await ingest.lastRefreshStarted.map { $0.timeIntervalSince(posted) } ?? -1
+        checkCounting("…right after a library-changed notice: skipped, then exactly the one debounced re-ingest, 5 s after the notice",
+                      notices.total - heardBefore == 1 && pending == nil && after == before + 1 && delay >= 4.9,
+                      "notices heard \(notices.total - heardBefore); \(pending == nil ? "skipped" : "ran one"), then "
+                      + "\(after - before) refreshes, the last \(fmt(delay)) s after the notice", since: began)
+    }
+
+    /// LibraryIngest.refreshSoon, through which an add's end asks for its re-read (RESEARCH.md
+    /// §6.10): a re-ingest at once when none is running; one more behind one that is, so it reads
+    /// what the add just did; nothing when one is already waiting its turn or scheduled by a
+    /// change notice. Posts one library-changed notice. Its counts are exact (`checkCounting`).
+    func checkRefreshSoon() async throws {
+        let began = Date()
+        // Past the previous check's notice and the re-ingest it brought.
+        try await Task.sleep(for: .seconds(6))
+        var before = await ingest.refreshCount
+        let idle = await ingest.refreshSoon()
+        var after = await ingest.refreshCount
+        let written = await ingest.lastWrittenRefreshStarted, latest = await ingest.lastRefreshStarted
+        checkCounting("refreshSoon with nothing running or coming: one re-ingest, its report, and it counts as the library read",
+                      idle?.status == .ok && after == before + 1 && written != nil && written == latest,
+                      "\(idle.map { "\($0.status)" } ?? "skipped"), \(after - before) refreshes", since: began)
+
+        before = await ingest.refreshCount
+        var mark = Date()
+        let running = Task { await self.ingest.refresh() }
+        var started = Date().addingTimeInterval(10)
+        while (await ingest.lastRefreshStarted ?? .distantPast) <= mark, Date() < started {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let behind = await ingest.refreshSoon()
+        _ = await running.value
+        after = await ingest.refreshCount
+        checkCounting("…while one runs: one more behind it, so it reads what came since",
+                      behind?.status == .ok && after == before + 2,
+                      "\(behind.map { "\($0.status)" } ?? "skipped"), \(after - before) refreshes", since: began)
+
+        before = await ingest.refreshCount
+        mark = Date()
+        let first = Task { await self.ingest.refresh() }
+        started = Date().addingTimeInterval(10)
+        while (await ingest.lastRefreshStarted ?? .distantPast) <= mark, Date() < started {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let second = Task { await self.ingest.refresh() }
+        try await Task.sleep(for: .milliseconds(100))   // it has asked by now, and waits its turn
+        let waitingItsTurn = await ingest.refreshSoon()
+        _ = await first.value
+        _ = await second.value
+        after = await ingest.refreshCount
+        checkCounting("…with one already waiting its turn: nothing, never a second behind the first",
+                      waitingItsTurn == nil && after == before + 2,
+                      "\(waitingItsTurn == nil ? "skipped" : "ran one"), \(after - before) refreshes", since: began)
+
+        let heardBefore = notices.total
+        before = await ingest.refreshCount
+        notices.post()
+        let arrival = Date().addingTimeInterval(3)
+        while notices.total == heardBefore, Date() < arrival { try await Task.sleep(for: .milliseconds(20)) }
+        // The ingest heard it as this bench did, and has handed it to the debounce by now.
+        try await Task.sleep(for: .milliseconds(300))
+        let pending = await ingest.refreshSoon()
+        let settled = Date().addingTimeInterval(60)
+        while await ingest.refreshCount == before, Date() < settled { try await Task.sleep(for: .milliseconds(250)) }
+        try await Task.sleep(for: .seconds(3))   // room for a second, unwanted one
+        after = await ingest.refreshCount
+        checkCounting("…right after a library-changed notice: nothing, then only the debounced re-ingest",
+                      pending == nil && after == before + 1,
+                      "\(pending == nil ? "skipped" : "ran one"), then \(after - before) refreshes", since: began)
+    }
+
+    /// A re-ingest that read Music's playlists before a playlist edit landed leaves them as edited
+    /// and stores no hash (RESEARCH.md §6.8), then reads them again by itself 5 s later, on its own
+    /// path, not through the change debounce: Music's last notice may have come before the edit,
+    /// and then nothing else would rewrite them (LibraryIngest.staleRetryWait; the log says
+    /// "library: playlists changed while they were being read; reading them again in 5 s"). The
+    /// edit is to this bench's scratch index, never to Music. A notice of Music's during it can do
+    /// the retry's job, so whether it would pass or fail, a run in which Music posted is BLOCKED
+    /// (`checkCounting`).
+    func checkStalePlaylistsRetry() async throws {
+        guard let list = try await index.playlists().first(where: { $0.kind == .regular }) else {
+            return fail("a re-ingest that read the playlists before an edit asks for another pass", "no plain playlist in the index")
+        }
+        let edited = "Harness Edited While Reading"
+        let began = Date()
+        // Past the previous check's notice and the re-ingest it brought.
+        try await Task.sleep(for: .seconds(6))
+        let before = await ingest.refreshCount
+        let mark = Date()
+        let reading = Task { await self.ingest.refresh() }
+        let started = Date().addingTimeInterval(10)
+        while (await ingest.lastRefreshStarted ?? .distantPast) <= mark, Date() < started {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        // It read the edit stamp as it began, and iTunesLibrary takes seconds to load: the edit lands meanwhile.
+        try await Task.sleep(for: .milliseconds(300))
+        try await index.apply(.renamed(list.id, to: edited))
+        _ = await reading.value
+        let firstEnded = Date()
+        let kept = try await index.playlists().first { $0.id == list.id }?.name
+        let deadline = Date().addingTimeInterval(60)
+        while await ingest.refreshCount < before + 2, Date() < deadline { try await Task.sleep(for: .milliseconds(250)) }
+        try await Task.sleep(for: .seconds(3))   // room for a third, unwanted one
+        let after = await ingest.refreshCount
+        let gap = await ingest.lastRefreshStarted.map { $0.timeIntervalSince(firstEnded) } ?? -1
+        let restored = try await index.playlists().first { $0.id == list.id }?.name
+        let counts = notices.counts(since: began)
+        checkCounting("a re-ingest that read the playlists before an edit landed leaves the edit, and one more pass follows by "
+                      + "itself, about 5 s later, and rewrites them from Music",
+                      kept == edited && after == before + 2 && restored == list.name && gap < 15 && counts.heard == counts.posted,
+                      "playlist \(MusicPersistentID.hex(list.id)): edit kept \(kept == edited), \(after - before) refreshes, "
+                      + "Music's name back \(restored == list.name); the second began \(fmt(gap)) s after the first ended",
+                      heard: counts.heard, posted: counts.posted)
     }
 
     // MARK: - Timeouts
@@ -378,5 +664,52 @@ extension LibraryHarnessBench {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
         check("R11: at 3x (\(rows) rows) every sort stays under 16.7 ms (one frame)", rows == 47_700 && slowestSort < 16.7,
               "median ms: \(parts.joined(separator: " ")); file \(size / 1_048_576) MB")
+    }
+}
+
+/// HARNESS ONLY. The library-changed notices heard during the change checks, each either one this
+/// bench posted or one of Music's. Music posts its own by itself (`musicNotices`), and a re-ingest
+/// one starts can still be running when a check begins, so a check counts from before it began.
+@MainActor
+final class LibraryHarnessNotices {
+    /// How long before a check its notices still count: the 5 s debounce plus the longest re-ingest.
+    static let lookBack: TimeInterval = 25
+
+    private var observer: (any NSObjectProtocol)?
+    private var ownOnTheWay = 0
+    private var arrivals: [(at: Date, own: Bool)] = []
+
+    /// All the notices heard so far.
+    var total: Int { arrivals.count }
+
+    func start() {
+        observer = DistributedNotificationCenter.default().addObserver(forName: .ITLibraryDidChange, object: nil,
+                                                                       queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.arrived() }
+        }
+    }
+
+    func stop() {
+        if let observer { DistributedNotificationCenter.default().removeObserver(observer) }
+        observer = nil
+    }
+
+    /// Posts the notice Music posts. The next one to arrive is taken for it.
+    func post() {
+        ownOnTheWay += 1
+        DistributedNotificationCenter.default().postNotificationName(
+            .ITLibraryDidChange, object: nil, userInfo: nil, deliverImmediately: true)
+    }
+
+    /// The notices heard from `lookBack` before `began` until now, and how many were this bench's.
+    func counts(since began: Date) -> (heard: Int, posted: Int) {
+        let counted = arrivals.filter { $0.at >= began.addingTimeInterval(-Self.lookBack) }
+        return (counted.count, counted.filter(\.own).count)
+    }
+
+    private func arrived() {
+        let own = ownOnTheWay > 0
+        if own { ownOnTheWay -= 1 }
+        arrivals.append((Date(), own))
     }
 }

@@ -31,6 +31,8 @@ final class LibraryHarnessBench {
     private(set) var passed = 0
     private(set) var failed = 0
     private(set) var blockedCount = 0
+    /// The library-changed notices heard during the change checks, this bench's own and Music's.
+    let notices = LibraryHarnessNotices()
     private(set) var changePosts = 0
     private(set) var changePostsOffMain = 0
     private(set) var allTracks: [Track] = []
@@ -91,7 +93,15 @@ final class LibraryHarnessBench {
             try await checkUpdate()
             try await checkCompilationEdits()
             try await checkCheckedState()
+            notices.start()
             try await checkChangeWatching()
+            try await checkChangeMaxWait()
+            checkChangeBackOff()
+            checkStaleRetryBackOff()
+            try await checkRefreshIfIdle()
+            try await checkRefreshSoon()
+            try await checkStalePlaylistsRetry()
+            notices.stop()
             await checkDeadline()
             await checkDeadlineCancellation()
             try await checkConcurrentReadsDuringWrites()

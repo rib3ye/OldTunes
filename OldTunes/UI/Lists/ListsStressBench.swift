@@ -4,7 +4,8 @@ import AppKit
 /// for what a user hits and a scripted walk-through does not: small scrolls onto rows that were
 /// prepared before their data landed, reload() racing a row fetch, a slow query that ignores
 /// cancellation, edits made while a search is still debouncing, empty results, resizes, rapid
-/// sorting, header clicks over a selection, and persistence read back by a fresh controller.
+/// sorting, header clicks over a selection, persistence read back by a fresh controller, and
+/// what a ⌘A drag of the whole library writes before it starts.
 ///
 /// Every wait here is plain time passing, never `waitForRows()`, which fetches on its own and
 /// so would hide a list that forgot to.
@@ -75,6 +76,7 @@ final class ListsStressBench {
         await rapidSorts()
         await resizeFills()
         await selectAllResort()
+        await dragWriterTiming()
         await nowPlayingFollowsSort()
         await columnLayoutRestores()
         await shownColumnScrollsIntoView()
@@ -487,6 +489,34 @@ final class ListsStressBench {
         await tracks.waitForLoad()
     }
 
+    /// What a ⌘A drag of the whole library writes before it can start: one pasteboard writer per
+    /// row from the data source, all of them on the pasteboard, and SongDrag reading them back on
+    /// the drop. Written to the bench's own named pasteboard, never the drag or general one. The
+    /// drag images, made per item once the session starts, aren't in this: that needs a real drag,
+    /// which is on Noah's hand-check list (a ⌘A drag of the library onto a playlist).
+    private func dragWriterTiming() async {
+        guard let tracks, let data = tracks.tableView.dataSource else { return }
+        let table = tracks.tableView
+        await tracks.waitForLoad()
+        let rows = tracks.order.count
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("com.noahtsutsui.oldtunes.harness.stress-drag"))
+        defer { pasteboard.releaseGlobally() }
+        let t0 = ContinuousClock.now
+        let writers = (0..<rows).compactMap { data.tableView?(table, pasteboardWriterForRow: $0) }
+        let t1 = ContinuousClock.now
+        pasteboard.clearContents()
+        pasteboard.writeObjects(writers)
+        let t2 = ContinuousClock.now
+        let ids = SongDrag.ids(on: pasteboard)
+        let t3 = ContinuousClock.now
+        let total = Self.ms(t3 - t0)
+        check("a ⌘A drag's pasteboard for every row is written and read back in under 2 s",
+              writers.count == rows && ids == tracks.order && rows > 15_000 && total < 2_000,
+              "\(rows) rows: writers \(String(format: "%.0f", Self.ms(t1 - t0))) ms, onto the pasteboard "
+              + "\(String(format: "%.0f", Self.ms(t2 - t1))) ms, read back \(String(format: "%.0f", Self.ms(t3 - t2))) ms; "
+              + "\(ids.count) ids, in order: \(ids == tracks.order)")
+    }
+
     private func nowPlayingFollowsSort() async {
         guard let tracks else { return }
         let table = tracks.tableView
@@ -601,13 +631,16 @@ final class ListsStressBench {
 
     /// A real right-click: the menu opens over the row, and the row must not get macOS's modern
     /// rounded context-menu outline (iTunes simply selected the row). Snapshots are taken with
-    /// the menu open and after it closes; any difference around the row is that outline.
+    /// the menu open and after it closes; any difference around the row is that outline. The
+    /// open menu is read 0.4 s after its tracking begins, by when the track list has built it (in
+    /// menuNeedsUpdate) and AppKit drawn its look; a timer closes it after 2.5 s if it never opens.
     private func contextMenuLook() async {
         guard let tracks, let window else { return }
         let table = tracks.tableView
         window.makeFirstResponder(table)
         table.deselectAll(nil)
-        await pause(200)
+        NSApp.activate()
+        await pause(300)
         let row = tracks.visibleRows.lowerBound + 4
         let rect = table.rect(ofRow: row)
         let probe = MenuProbe()
@@ -616,17 +649,31 @@ final class ListsStressBench {
                                              timestamp: ProcessInfo.processInfo.systemUptime,
                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0,
                                              clickCount: 1, pressure: 1) else { return }
-        let timer = Timer(timeInterval: 0.5, repeats: false) { [weak self] _ in
+        // Posted for AppKit's own menu around a context menu, not the table's, and before the
+        // table's is built: so any menu's, while this right-click's is the only one open (see
+        // ListsPlaylistBench's realRightClick).
+        let began = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil,
+                                                           queue: nil) { [weak self] _ in
             MainActor.assumeIsolated {
                 probe.opened = true
-                probe.during = self?.snapshotRep("S10_context_menu_open.png")
-                probe.titles = table.menu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? []
-                probe.clickedRow = table.clickedRow
-                table.menu?.cancelTracking()
+                let read = Timer(timeInterval: 0.4, repeats: false) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        probe.during = self?.snapshotRep("S10_context_menu_open.png")
+                        probe.titles = table.menu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? []
+                        probe.clickedRow = table.clickedRow
+                        table.menu?.cancelTracking()
+                    }
+                }
+                RunLoop.main.add(read, forMode: .common)
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        let giveUp = Timer(timeInterval: 2.5, repeats: false) { _ in
+            MainActor.assumeIsolated { table.menu?.cancelTracking() }
+        }
+        RunLoop.main.add(giveUp, forMode: .common)
         table.rightMouseDown(with: event)     // runs the menu's tracking loop until cancelled
+        giveUp.invalidate()
+        NotificationCenter.default.removeObserver(began)
         await pause(300)
         let after = snapshotRep("S11_context_menu_closed.png")
         var differing = 0, sampled = 0
@@ -644,10 +691,12 @@ final class ListsStressBench {
                 y += 0.5
             }
         }
-        check("a right-click selects the row and opens Play / Get Info / Show in Finder without a modern outline",
-              probe.opened && probe.titles == ["Play", "Get Info", "—", "Show in Finder"]
+        check("a right-click selects the row and opens Play / Get Info / Download / Add to Playlist / Show in Finder "
+              + "without a modern outline",
+              probe.opened && probe.titles == ["Play", "Get Info", "—", "Download", "Add to Playlist", "—", "Show in Finder"]
               && table.selectedRow == row && differing == 0,
-              "menu \(probe.titles), clicked row \(probe.clickedRow) (want \(row)), selected \(table.selectedRow); "
+              (probe.opened ? "menu \(probe.titles)" : "the menu never opened (app active \(NSApp.isActive))")
+              + ", clicked row \(probe.clickedRow) (want \(row)), selected \(table.selectedRow); "
               + "\(differing) of \(sampled) pixels around the row differ with the menu open")
     }
 
@@ -770,7 +819,7 @@ final class ListsStressBench {
     }
 }
 
-/// What the right-click timer saw while the menu was open.
+/// Whether the right-click's menu opened, and what the bench saw while it was open.
 @MainActor
 private final class MenuProbe {
     var opened = false

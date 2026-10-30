@@ -1,9 +1,11 @@
+import AVFoundation
 import Foundation
 import MediaPlayer
 import MusicKit
 
 /// OLDTUNES_PLAYBACK_MODE=fixes (also run at the end of the default mode): regression checks for
-/// the review's playback findings 3, 5, 7/15 and 17, and for the per-song checkbox.
+/// the review's playback findings 3, 5, 7/15 and 17, for the per-song checkbox, and for the guard
+/// against protected downloads (as far as it can be checked without one).
 ///
 /// Each scenario builds its own coordinator over a PlaybackHarnessLibrary whose Simulation
 /// reproduces the failure on demand: missing MusicKit permission, lookups that hang and find
@@ -43,6 +45,7 @@ final class ReviewFixBench {
         await pauseEndsSkipRun()
         await pickedSongThatCannotPlay()
         await resumeAfterBusyMainThread()
+        await protectedDownloads()
         for player in players { player.stop() }
         Log.info("FIXES RESULT: \(passed) PASS, \(failed) FAIL")
     }
@@ -461,7 +464,108 @@ final class ReviewFixBench {
         player.stop()
     }
 
+    // MARK: Protected downloads
+
+    /// What can be checked of the guard against protected downloads without one: no fixture can
+    /// be made, since only the Music app downloads a protected (FairPlay) file, so a real one is
+    /// for Noah to try by hand. A plain file still loads and queues through the new checks; a
+    /// package where the file should be (how Music keeps some downloads, a `.movpkg`) streams from
+    /// iCloud and is never queued behind a song; and the reason says what happened.
+    private func protectedDownloads() async {
+        Log.info("=== fixes: protected downloads (no FairPlay file can be made here; one is tried by hand) ===")
+        guard let file = l1.fileURL else { return }
+        let protected = try? await AVURLAsset(url: file).load(.hasProtectedContent)
+        check("a plain file reads as not protected (guard)", protected == false,
+              "hasProtectedContent=\(protected.map(String.init(describing:)) ?? "unreadable")")
+
+        let library = PlaybackHarnessLibrary(tracks: [l1, l2], songs: loaded.songs)
+        let player = makePlayer(library)
+        player.play(queue: [l1.id, l2.id], startAt: l1.id)
+        let started = await waitUntil(5) { self.playing(player, self.l1) && player.local.isPlaying }
+        let queued = await waitUntil(3) { player.local.preloadedURL == self.l2.fileURL }
+        check("a plain file still plays from its file, and the next one still queues behind it (guard)",
+              started && queued, "queued \(queuedFile(player, in: library)) " + line(player))
+        reset()
+        player.seek(to: player.state.duration - 2)
+        let advanced = await waitUntil(8) { self.playing(player, self.l2) }
+        check("…and the queued file starts when the song ends, through the same checks (guard)",
+              advanced && player.local.isPlaying && player.state.lastError == nil && player.local.preloadedURL == nil,
+              changes() + line(player))
+        player.stop()
+
+        let package = FileManager.default.temporaryDirectory.appendingPathComponent("oldtunes-fixes-download.movpkg",
+                                                                                   isDirectory: true)
+        try? FileManager.default.removeItem(at: package)
+        do {
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        } catch {
+            check("protected downloads: a stand-in package", false, error.localizedDescription)
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: package) }
+        check("a package where the file should be is told apart from a file",
+              PlaybackCoordinator.isDirectory(package) && !PlaybackCoordinator.isDirectory(file))
+
+        var stranded = Track.blank(id: -400)
+        stranded.title = "Harness: a package and no iCloud song"
+        stranded.duration = 200
+        stranded.bucket = .local
+        stranded.fileURL = package
+        let library2 = PlaybackHarnessLibrary(tracks: [l1, stranded, l2], songs: loaded.songs)
+        let player2 = makePlayer(library2)
+        player2.play(queue: [l1.id, stranded.id, l2.id], startAt: l1.id)
+        _ = await waitUntil(5) { self.playing(player2, self.l1) }
+        try? await Task.sleep(for: .seconds(1.5))
+        check("a package is never queued behind the song playing", playing(player2, l1) && player2.local.preloadedURL == nil,
+              "queued \(queuedFile(player2, in: library2)) " + line(player2))
+        player2.stop()
+        reset()
+        player2.play(queue: [stranded.id, l2.id], startAt: stranded.id)
+        let stopped = await waitUntil(12) {
+            player2.state.lastError != nil && player2.state.nowPlaying == nil && !player2.state.isLoading
+        }
+        let error = player2.state.lastError ?? ""
+        check("a double-clicked package with no iCloud song stops there, says it is a protected download, and no file engine ran",
+              stopped && error == "\u{201C}\(stranded.displayTitle)\u{201D} could not be played: \(PlaybackCoordinator.protectedReason)"
+              && !player2.local.isPlaying, "lastError=\(error)")
+        player2.stop()
+
+        if let cloud = loaded.clouds.dropFirst(8).first {
+            var package2 = cloud
+            package2.id = -401
+            package2.title = "Harness: a package with an iCloud song"
+            package2.bucket = .local
+            package2.fileURL = package
+            let library3 = PlaybackHarnessLibrary(tracks: [package2, l1], songs: loaded.songs)
+            let player3 = makePlayer(library3)
+            reset()
+            player3.play(queue: [package2.id, l1.id], startAt: package2.id)
+            let streams = await waitUntil(20) { self.playing(player3, package2) && player3.cloud.isPlaying }
+            check("a package with an iCloud song streams it from iCloud, the file engine never trying the package",
+                  streams && !player3.local.isPlaying && player3.local.preloadedURL == nil, changes() + line(player3))
+            player3.stop()
+        } else {
+            check("protected downloads: a spare cloud song", false, "only \(loaded.clouds.count) cloud songs")
+        }
+
+        check("the reason, in plain words: a protected download, which only the Music app can play",
+              PlaybackCoordinator.plainReason(TransportError.protected, fromCloud: false) == PlaybackCoordinator.protectedReason
+              && PlaybackCoordinator.protectedReason == "it is a protected download, which only the Music app can play."
+              && TransportError.protected.errorDescription == "This song is a protected download, which only the Music app can play.")
+    }
+
     // MARK: Helpers
+
+    /// What `player` has queued to play next, never by file name: Music names its files after
+    /// the song. Its extension, whether it is a package, and whose it is: a library song's hex
+    /// persistent ID, as PlaybackCoordinator's own log line has it, or a folder song's row.
+    private func queuedFile(_ player: PlaybackCoordinator, in library: PlaybackHarnessLibrary) -> String {
+        guard let url = player.local.preloadedURL else { return "nothing" }
+        let song = library.byID.values.first { $0.fileURL == url }.map { track in
+            track.persistentID.map { "song " + String(format: "%016llX", UInt64(bitPattern: $0)) } ?? "folder song \(track.id)"
+        } ?? "a file of no song in this list"
+        return "\(song) (.\(url.pathExtension), \(PlaybackCoordinator.isDirectory(url) ? "a package" : "a plain file"))"
+    }
 
     private static func blockCurrentThread(_ seconds: TimeInterval) { Thread.sleep(forTimeInterval: seconds) }
 
