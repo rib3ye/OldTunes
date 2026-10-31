@@ -33,6 +33,8 @@ final class TrackListViewController: NSViewController {
     var onAddToPlaylist: ((_ ids: [Track.ID], _ playlist: Int64) -> Void)?
     /// Right-click ▸ Add to Playlist ▸ New Playlist: a new playlist with the selection, in row order.
     var onNewPlaylistFromSelection: (([Track.ID]) -> Void)?
+    var onRemoveFromPlaylist: ((_ ids: [Track.ID], _ playlist: Int64) -> Void)?
+    var playlistInfo: ((Int64) -> PlaylistInfo?)?
     /// The playlists Add to Playlist ▸ offers: the source list's tree (`playlistTree`). Read each
     /// time the menu opens, which can't wait for the library.
     var playlistMenu: (() -> [PlaylistMenuEntry])?
@@ -67,6 +69,22 @@ final class TrackListViewController: NSViewController {
     }
 
     private(set) var order: [Track.ID] = []
+    private var displayedScope: LibraryScope?
+
+    var canRemoveSelection: Bool {
+        removablePlaylist != nil && !table.selectedRowIndexes.isEmpty && onRemoveFromPlaylist != nil
+    }
+
+    private var removablePlaylist: Int64? {
+        guard displayedScope == query.scope, case .playlist(let id) = query.scope,
+              playlistInfo?(id)?.kind == .regular else { return nil }
+        return id
+    }
+
+    @objc private func clearFromMenu(_ sender: Any?) {
+        guard canRemoveSelection, let playlist = removablePlaylist else { NSSound.beep(); return }
+        onRemoveFromPlaylist?(selectedIDs, playlist)
+    }
 
     var selectedIDs: [Track.ID] {
         table.selectedRowIndexes.compactMap { $0 < order.count ? order[$0] : nil }
@@ -390,6 +408,8 @@ final class TrackListViewController: NSViewController {
         table.doubleAction = #selector(doubleClicked(_:))
         table.onReturn = { [weak self] in self?.activateSelection() }
         table.onCommandI = { [weak self] in self?.getInfo(nil) }
+        table.onDelete = { [weak self] in self?.clearFromMenu(nil) }
+        table.canDelete = { [weak self] in self?.canRemoveSelection ?? false }
         table.interceptMouseDown = { [weak self] event in self?.handleCheckboxClick(event) ?? false }
         // Songs drag onto the source list's playlists, and only inside OldTunes. A drag starts
         // sideways, toward the source list; a vertical drag still extends the selection, as it
@@ -541,6 +561,7 @@ final class TrackListViewController: NSViewController {
             guard !Task.isCancelled, generation == self.loadGeneration else { return }
 
             self.apply(prepared, selectedBefore: selected, scroll: scroll, anchorOffset: anchor?.offset, inPlace: inPlace)
+            self.displayedScope = query.scope
             let done = ContinuousClock.now
             self.lastLoadMillis = Self.ms(done - started)
             self.lastApplyMillis = Self.ms(done - preparedAt)
@@ -565,9 +586,15 @@ final class TrackListViewController: NSViewController {
         // A click made while the order was being prepared off the main thread wins over the
         // selection captured before it. Both lists are in the old order's row order.
         let selectedNow = selectedIDs
-        let selection = selectedNow == selectedBefore
+        var selection = selectedNow == selectedBefore
             ? prepared.selection
             : IndexSet(selectedNow.compactMap { prepared.index[$0] })
+        // After Clear, keep the next row selected (or the last row when clearing the end).
+        if inPlace, displayedScope == query.scope, case .playlist = query.scope,
+           selection.isEmpty, !selectedNow.isEmpty, !prepared.ids.isEmpty,
+           let row = table.selectedRowIndexes.first {
+            selection.insert(min(row, prepared.ids.count - 1))
+        }
         let oldCount = order.count
         order = prepared.ids
         indexOfID = prepared.index
@@ -1028,6 +1055,12 @@ extension TrackListViewController: NSMenuDelegate {
         add.submenu = addToPlaylistMenu(hasSelection: !ids.isEmpty)
         add.isEnabled = !ids.isEmpty && (onAddToPlaylist != nil || onNewPlaylistFromSelection != nil)
         menu.addItem(add)
+        if removablePlaylist != nil {
+            let clear = NSMenuItem(title: "Clear", action: #selector(clearFromMenu(_:)), keyEquivalent: "")
+            clear.target = self
+            clear.isEnabled = canRemoveSelection
+            menu.addItem(clear)
+        }
         menu.addItem(.separator())
         let finder = NSMenuItem(title: "Show in Finder", action: #selector(showInFinder(_:)), keyEquivalent: "")
         finder.target = self

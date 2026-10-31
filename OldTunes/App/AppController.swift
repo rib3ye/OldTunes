@@ -207,6 +207,8 @@ final class AppController: NSObject {
         }
         tracks.onNewPlaylistFromSelection = { [weak self] ids in self?.newPlaylistFromSelection(ids) }
         tracks.playlistMenu = { [weak self] in self?.sources.playlistTree ?? [] }
+        tracks.playlistInfo = { [weak self] in self?.sources.playlist($0) }
+        tracks.onRemoveFromPlaylist = { [weak self] ids, id in self?.removeSongs(ids, from: id) }
         tracks.onToggleChecked = { [weak self] ids, checked in
             guard let index = self?.index else { return }
             Task {
@@ -732,13 +734,66 @@ final class AppController: NSObject {
     /// in Music and on every device but never seen here.
     private func addSongs(_ ids: [Track.ID], to playlist: PlaylistInfo) {
         enqueuePlaylistWork(about: playlist.id) { app in
-            // OldTunes can't take them back out, and a big add holds up every playlist command.
+            // A big add holds up every playlist command.
             guard let add = await app.confirmAdd(ids, to: playlist) else { return }
             if add.plan.alreadyThere > 0 {
                 Log.info("playlists: \(add.plan.alreadyThere) songs left out, already in \(MusicPersistentID.hex(playlist.id))")
             }
             await app.addInChunks(add.plan, from: add.rows, to: playlist, firstChunkStartsMusic: true)
         }
+    }
+
+    private func removeSongs(_ ids: [Track.ID], from playlistID: Int64) {
+        guard !ids.isEmpty else { return }
+        enqueuePlaylistWork(about: playlistID) { app in
+            await app.sources.renamesEnded()
+            guard let playlist = app.sources.playlist(playlistID), playlist.kind == .regular else { return }
+            let rows: [Track]
+            do {
+                let members = Set(try await app.index.ids(for: TrackQuery(scope: .playlist(playlistID))))
+                rows = try await app.index.tracks(ids: ids.filter { members.contains($0) })
+            } catch {
+                app.showError("OldTunes couldn’t read “\(playlist.name)”.", error.localizedDescription)
+                return
+            }
+            var seen = Set<Int64>()
+            let pids = rows.compactMap { row -> Int64? in
+                guard row.origin == .musicLibrary, let pid = row.persistentID, seen.insert(pid).inserted else { return nil }
+                return pid
+            }
+            guard !pids.isEmpty else { return }
+            let question = Self.removeSongsQuestion(count: pids.count, from: playlist.name)
+            let choice = await RetroAlert.show(question.message, informative: question.informative,
+                                               buttons: ["Cancel", "Remove"], cancelIndex: 0,
+                                               on: app.windowController.window)
+            guard choice == 1 else { return }
+            var removed = 0
+            var failure: String?
+            for start in stride(from: 0, to: pids.count, by: Self.addChunkSize) {
+                let chunk = Array(pids[start..<min(start + Self.addChunkSize, pids.count)])
+                let report = await app.playlistEditor.removeSongs(chunk, from: playlistID, continuing: start > 0)
+                if !report.removed.isEmpty {
+                    await app.showPlaylistEdit(.songsRemoved(playlistID, persistentIDs: report.removed))
+                    removed += report.removed.count
+                }
+                if let reason = report.stopReason { failure = reason; break }
+            }
+            Log.info("playlists: removed \(removed) of \(pids.count) songs from \(MusicPersistentID.hex(playlistID))")
+            if let failure {
+                // A timed-out delete may still complete, or a playlist may have gone elsewhere.
+                Task { [ingest = app.ingest] in _ = await ingest.refreshSoon() }
+                await app.sources.renamesEnded()
+                let name = app.sources.playlist(playlistID)?.name ?? playlist.name
+                app.showError("OldTunes couldn’t remove all the selected songs from “\(name)”.",
+                              "\(removed) of \(pids.count) songs were removed. \(failure)")
+            }
+        }
+    }
+
+    static func removeSongsQuestion(count: Int, from playlist: String) -> (message: String, informative: String) {
+        let what = count == 1 ? "the selected song" : "the \(count.formatted()) selected songs"
+        return ("Are you sure you want to remove \(what) from “\(playlist)”?",
+                "The songs stay in your library and other playlists. This changes the playlist in the Music app too.")
     }
 
     /// An add's songs as the index has them now: their rows, and what goes to Music
@@ -1062,7 +1117,7 @@ final class AppController: NSObject {
     static func addSongsQuestion(count: Int, to playlist: String?) -> (message: String, informative: String)? {
         guard count > bigAddSongs else { return nil }
         return ("Add \(count.formatted()) songs to \(playlist.map { "“\($0)”" } ?? "a new playlist")?",
-                "OldTunes can’t take songs back out of a playlist; the Music app can.")
+                "Adding this many songs may take a while. Other playlist changes wait until it finishes.")
     }
 
     /// The one alert after an add, nil when every song went in (or was there already), worded

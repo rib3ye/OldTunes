@@ -413,6 +413,72 @@ final class MusicScriptingSession {
         try check("Music couldn’t delete the playlist")
     }
 
+    /// Resolve the playlist, then check Music's own class and flags before permitting removal.
+    /// A library or special playlist must never be the container of a track delete.
+    func playlistRemovalTarget(_ persistentID: Int64) throws -> NSAppleEventDescriptor {
+        let playlist = try playlist(persistentID: persistentID)
+        try requireProperty("id", on: playlist)
+        let id = playlist.value(forKey: "id") as? NSNumber
+        try check("Music couldn’t read the playlist’s ID")
+        guard let id else { throw TagEditError(message: "Music couldn’t read the playlist’s ID.") }
+        let reference = Self.playlistReference(id: id.int32Value)
+        func property(_ code: OSType) throws -> NSAppleEventDescriptor? {
+            let get = Self.coreEvent(0x6765_7464) // getd
+            get.setParam(Self.objectReference(want: 0x7072_6F70, from: reference, form: 0x7072_6F70,
+                                              key: NSAppleEventDescriptor(typeCode: code)), forKeyword: Self.directObject)
+            return try send(get, "Music couldn’t check the playlist").paramDescriptor(forKeyword: Self.directObject)
+        }
+        let kind = try property(0x7063_6C73)?.typeCodeValue // pcls
+        let special = try property(0x7053_704B)?.enumCodeValue // pSpK
+        guard kind == 0x6355_7350, special == 0x6B4E_6F6E, // cUsP, kNon
+              try property(0x7053_6D74)?.booleanValue == false, // pSmt
+              try property(0x7047_6E73)?.booleanValue == false else { // pGns
+            throw TagEditError(message: "Songs can only be removed from a plain playlist you can edit.")
+        }
+        return reference
+    }
+
+    /// Keep the whose specifier inside the playlist all the way to the delete event. Calling
+    /// `track(persistentID:)` here would resolve a library track and delete the library song.
+    /// Music evaluates the ID test at the delete, so a concurrent reorder cannot change its target.
+    func removeSong(_ persistentID: Int64, from playlist: NSAppleEventDescriptor) throws {
+        _ = try send(Self.playlistRemovalEvent(persistentID, from: playlist), "Music couldn’t remove the song from the playlist")
+    }
+
+    static func playlistReference(id: Int32) -> NSAppleEventDescriptor {
+        let source = objectReference(want: 0x6353_7263, from: .null(), form: 0x696E_6478,
+                                     key: NSAppleEventDescriptor(int32: 1)) // source 1
+        return objectReference(want: 0x6350_6C79, from: source, form: 0x4944_2020,
+                               key: NSAppleEventDescriptor(int32: id)) // playlist id
+    }
+
+    /// Pure event construction, inspected by the offline playlist bench; never a library-track
+    /// reference, and all occurrences of a song in this playlist match OldTunes's single row.
+    static func playlistRemovalEvent(_ persistentID: Int64, from playlist: NSAppleEventDescriptor) -> NSAppleEventDescriptor {
+        let examined = NSAppleEventDescriptor(descriptorType: 0x6578_6D6E, data: Data())! // exmn
+        let property = objectReference(want: 0x7072_6F70, from: examined, form: 0x7072_6F70,
+                                       key: NSAppleEventDescriptor(typeCode: 0x7050_4953)) // pPIS
+        let comparison = NSAppleEventDescriptor.record()
+        comparison.setDescriptor(NSAppleEventDescriptor(enumCode: 0x3D20_2020), forKeyword: 0x7265_6C6F) // relo: =
+        comparison.setDescriptor(property, forKeyword: 0x6F62_6A31) // obj1
+        comparison.setDescriptor(NSAppleEventDescriptor(string: MusicPersistentID.hex(persistentID)), forKeyword: 0x6F62_6A32) // obj2
+        let tracks = objectReference(want: 0x6354_726B, from: playlist, form: 0x7465_7374,
+                                     key: comparison.coerce(toDescriptorType: 0x636D_7064)!) // cTrk, test, cmpd
+        let event = coreEvent(0x6465_6C6F) // delo
+        event.setParam(tracks, forKeyword: directObject)
+        return event
+    }
+
+    private static func objectReference(want: OSType, from: NSAppleEventDescriptor, form: OSType,
+                                        key: NSAppleEventDescriptor) -> NSAppleEventDescriptor {
+        let reference = NSAppleEventDescriptor.record()
+        reference.setDescriptor(NSAppleEventDescriptor(typeCode: want), forKeyword: 0x7761_6E74)
+        reference.setDescriptor(from, forKeyword: 0x6672_6F6D)
+        reference.setDescriptor(NSAppleEventDescriptor(enumCode: form), forKeyword: 0x666F_726D)
+        reference.setDescriptor(key, forKeyword: 0x7365_6C64)
+        return reference.coerce(toDescriptorType: 0x6F62_6A20)!
+    }
+
     /// Asks Music to download `item`, a cloud song as `track(persistentID:)` found it, to this
     /// Mac. Music fetches the file in the background and never says when it is done.
     func download(_ item: SBObject) throws {

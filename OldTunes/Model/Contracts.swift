@@ -109,6 +109,8 @@ enum PlaylistEdit: Sendable, Equatable {
     /// Songs Music appended to a plain playlist, by persistent ID, in the order they went in,
     /// repeats included.
     case songsAdded(Int64, persistentIDs: [Int64])
+    /// All entries for these songs removed from this playlist; the library songs stay.
+    case songsRemoved(Int64, persistentIDs: [Int64])
 }
 
 // MARK: - Playlist commands
@@ -146,6 +148,8 @@ protocol PlaylistEditing: Sendable {
     /// Never throws: what went in and why the rest didn't are in the report, so a partial add
     /// still reaches the index.
     func addSongs(_ persistentIDs: [Int64], to playlist: Int64, continuing: Bool) async -> PlaylistAddReport
+    /// Removes playlist membership only. Later chunks never relaunch Music after a quit.
+    func removeSongs(_ persistentIDs: [Int64], from playlist: Int64, continuing: Bool) async -> PlaylistRemoveReport
 }
 
 extension PlaylistEditing {
@@ -159,6 +163,13 @@ extension PlaylistEditing {
     func renamePlaylist(_ id: Int64, to name: String) async throws {
         try await renamePlaylist(id, to: name, continuing: false)
     }
+}
+
+struct PlaylistRemoveReport: Sendable, Equatable {
+    /// Confirmed absent from the playlist, including songs already removed elsewhere.
+    var removed: [Int64] = []
+    /// Stops at the first error; a timed-out request may still complete in Music.
+    var stopReason: String?
 }
 
 /// What Music did with one chunk of an add to a playlist.

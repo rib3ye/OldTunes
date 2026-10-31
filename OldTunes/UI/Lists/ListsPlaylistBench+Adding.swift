@@ -648,9 +648,9 @@ extension ListsPlaylistBench {
               onlyOurs.send.isEmpty && onlyOurs.oldTunesOnly.count == 2, "send \(onlyOurs.send)")
 
         let big = App.addSongsQuestion(count: 1_234, to: "Lakeside")
-        check("an add of more than 500 songs asks first, and says OldTunes can't take them back out",
+        check("an add of more than 500 songs asks first, and explains the wait",
               App.addSongsQuestion(count: 500, to: "Lakeside") == nil && big?.message == "Add 1,234 songs to “Lakeside”?"
-              && big?.informative == "OldTunes can’t take songs back out of a playlist; the Music app can."
+              && big?.informative == "Adding this many songs may take a while. Other playlist changes wait until it finishes."
               && App.addSongsQuestion(count: 501, to: nil)?.message == "Add 501 songs to a new playlist?", "\(String(describing: big))")
 
         check("an add where every song went in (or was there already) says nothing",

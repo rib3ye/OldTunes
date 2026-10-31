@@ -33,6 +33,7 @@ final class ListsPlaylistBench {
     var addAsks: [(ids: [Track.ID], playlist: Int64)] = []
     var newPlaylistAsks: [[Track.ID]] = []
     var downloadAsks: [[Track.ID]] = []
+    var removeAsks: [(ids: [Track.ID], playlist: Int64)] = []
     /// The source list's selection changes, which a drag must never make.
     var scopeChanges: Int { scopes.count }
 
@@ -89,6 +90,7 @@ final class ListsPlaylistBench {
         await dropChecks(source, tracks: tracks, pasteboard: pasteboard, in: window)
         await dropOutlineLooks(source, pasteboard: pasteboard, in: window)
         await downloadBadgeLooks(tracks, index: index, in: window)
+        await removalChecks(source, tracks: tracks, index: index, in: window)
         await indexChecks(source, index: index)
         await renameWaitChecks(source, index: index)
         // Index edits on scratch indexes of their own, so the checks above keep their state.
@@ -182,6 +184,8 @@ final class ListsPlaylistBench {
         tracks.onNewPlaylistFromSelection = { [weak self] in self?.newPlaylistAsks.append($0) }
         // What AppController wires: the source list's own tree, read as the menu opens.
         tracks.playlistMenu = { [weak source] in source?.playlistTree ?? [] }
+        tracks.playlistInfo = { [weak source] in source?.playlist($0) }
+        tracks.onRemoveFromPlaylist = { [weak self] ids, playlist in self?.removeAsks.append((ids, playlist)) }
         window.center()
         window.makeKeyAndOrderFront(nil)
         await source.reload()

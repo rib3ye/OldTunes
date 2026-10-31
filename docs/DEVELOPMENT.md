@@ -157,7 +157,9 @@ notice of Music's can do that re-read's job. Run the bench again.
 menus, renaming in place (and waiting while a name is being typed, as the alerts after an add or
 a Download do), Delete and the index edits behind them, songs dragged onto playlists and
 the drop outline, Add to Playlist ▸, the blue cloud on songs being downloaded, and the rules and
-alert texts behind adding and downloading (the download watch runs on a made-up clock). It uses
+alert texts behind adding and downloading (the download watch runs on a made-up clock).
+It also checks playlist song removal through Delete and Clear, text-field focus, event structure,
+and preservation of library songs and other playlists. It uses
 an invented library in scratch indexes, never Music.
 
 Four live checks change the real Music library, so they run only with the library owner's
@@ -188,8 +190,8 @@ comes back empty or short stops the run with "couldn’t read the library", and 
 than that are counted, never named. Either way `nothing left behind` then fails too, naming no
 song, since whether Music made a copy can't be told. A song from another device that arrives
 during the call could still be taken for a copy, so look the ID up in Music before removing
-anything. The script never deletes a song: a scripted
-`delete` takes it out of the whole library, and Sync Library takes it off every device. For
+anything. The script never deletes a library song. A `delete` addressed to the library removes the song
+from every playlist, and Sync Library removes it from every device. For
 each add call it also logs how long the call took a song and the library-changed notices Music
 posted around it, the numbers `docs/RESEARCH.md` §6.10 says are still to be measured.
 
