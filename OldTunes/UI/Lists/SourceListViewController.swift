@@ -356,6 +356,7 @@ final class SourceListViewController: NSViewController {
         table.interceptMouseDown = { [weak self] event in self?.handleDisclosureClick(event) ?? false }
         table.onReturn = { [weak self] in self?.renameSelection() }
         table.onDelete = { [weak self] in self?.deleteSelection() }
+        table.canDelete = { [weak self] in self?.selectedPlaylist != nil && self?.onDeletePlaylist != nil }
         table.onLeftRight = { [weak self] right, all in self?.folderArrow(right: right, all: all) ?? false }
         let menu = NSMenu(title: "Source")
         menu.delegate = self

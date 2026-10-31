@@ -76,6 +76,45 @@ struct MusicPlaylistEditor: PlaylistEditing {
         }
     }
 
+    func removeSongs(_ persistentIDs: [Int64], from playlist: Int64, continuing: Bool) async -> PlaylistRemoveReport {
+        guard !persistentIDs.isEmpty else { return PlaylistRemoveReport() }
+        do {
+            if !continuing { try await ready() }
+            return try await MusicScriptingSession.run {
+                guard MusicAutomation.isMusicRunning else { return PlaylistRemoveReport(stopReason: Self.removeQuitReason) }
+                let session = try MusicScriptingSession(for: .editingPlaylists)
+                let target = try session.playlistRemovalTarget(playlist)
+                var report = PlaylistRemoveReport()
+                for pid in persistentIDs {
+                    guard MusicAutomation.isMusicRunning else {
+                        report.stopReason = Self.removeQuitReason
+                        break
+                    }
+                    do {
+                        try session.removeSong(pid, from: target)
+                        report.removed.append(pid)
+                    } catch {
+                        report.stopReason = Self.removeStopReason(for: Self.scriptingError(error))
+                        break
+                    }
+                }
+                return report
+            }
+        } catch {
+            return PlaylistRemoveReport(stopReason: Self.removeStopReason(for: Self.scriptingError(error)))
+        }
+    }
+
+    static let removeQuitReason = "Music quit, so OldTunes stopped removing songs."
+
+    static func removeStopReason(for error: TagEditError) -> String {
+        switch error.code {
+        case -600, -609: removeQuitReason
+        case -1712: "Music didn’t answer in time. The last song may still be removed from the playlist."
+        default: error.message
+        }
+    }
+
     func addSongs(_ persistentIDs: [Int64], to playlist: Int64, continuing: Bool) async -> PlaylistAddReport {
         guard !persistentIDs.isEmpty else { return PlaylistAddReport() }
         let started = Date()

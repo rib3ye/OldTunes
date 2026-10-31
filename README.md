@@ -114,8 +114,7 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
   - A song that's already in a playlist isn't added again.
   - Songs from a folder you added that the Music app doesn't have can't go in a playlist.
     OldTunes tells you how to give them to Music.
-  - OldTunes can't take songs back out of a playlist, so adding more than 500 songs at once
-    asks first. To take a song out, use the Music app.
+  - Adding more than 500 songs at once asks first.
   - Adding a lot of songs takes a while. Other playlist changes wait until it's done. Quitting
     the Music app stops it.
   - If a change that was waiting asks you something first, or opens a new playlist's name, it
@@ -124,6 +123,12 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
   - If some songs don't go in, OldTunes tells you which ones, in one message at the end. While
     you're typing a playlist's name, the message waits until you've finished. If the Music app
     was too slow to answer about a song, the message says that song may still go in.
+- **Remove songs from a playlist.** Select songs in a plain playlist, then press **Delete** or
+  choose **Edit ▸ Clear**. You can also right-click the selection and choose **Clear**.
+  Click **Remove** to confirm. The songs stay in your library and other playlists.
+  The Music app receives the change too. With Sync Library on, the change reaches your other devices.
+  - Smart playlists and Genius playlists do not support this command.
+  - OldTunes shows each song once per playlist. Removing that row removes every copy of that song from the playlist.
 - **Download iCloud songs** to your Mac. Right-click songs ▸ **Download**, or select them and
   choose **File ▸ Download**. To download a playlist's iCloud songs, right-click the playlist ▸
   **Download**. Songs already on your Mac are left alone. While a song downloads, the little
@@ -195,13 +200,14 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 | ⇧⌘N | New playlist with the selected songs |
 | Return, on a playlist | Rename it (Esc cancels) |
 | Delete, on a playlist | Delete it (OldTunes asks first) |
+| Delete, on songs in a plain playlist | Remove them from that playlist (OldTunes asks first) |
 
 ## What it can't do yet
 
 - **AirPlay.** iCloud songs can't play over AirPlay or crossfade, and the visualizer can't hear
   music that's playing over AirPlay.
-- **Editing inside playlists.** You can't remove single songs from a playlist yet, or change a
-  smart playlist's rules. Copying a long playlist, or adding a lot of songs to one, takes a while.
+- **Smart playlist rules.** You cannot change these rules in OldTunes.
+  Copying a long playlist, or adding many songs to one, takes a while.
 - **Sound Check on songs stored on your Mac** can only turn a quiet song up as far as the volume
   slider has room. The Music app can go further.
 - **Keys right as an iCloud song starts.** In its first moment, pressing play/pause or next on

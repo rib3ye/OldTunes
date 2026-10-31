@@ -35,6 +35,16 @@ extension LibraryIndex {
                 // playlist_item rows go with them (ON DELETE CASCADE).
                 try db.execute(sql: "DELETE FROM playlist WHERE id IN (SELECT value FROM json_each(?))",
                                arguments: [Self.jsonArray(doomed)])
+            case .songsRemoved(let id, let persistentIDs):
+                try db.execute(sql: """
+                    DELETE FROM playlist_item WHERE playlist_id = ? AND song_id IN (
+                        SELECT id FROM song WHERE persistent_id IN (SELECT value FROM json_each(?))
+                        AND origin = \(Track.Origin.musicLibrary.rawValue)
+                    ) AND EXISTS (SELECT 1 FROM playlist WHERE id = ? AND kind = \(PlaylistInfo.Kind.regular.storedValue))
+                    """, arguments: [id, Self.jsonArray(persistentIDs), id])
+                try db.execute(sql: """
+                    UPDATE playlist SET track_count = (SELECT COUNT(*) FROM playlist_item WHERE playlist_id = ?) WHERE id = ?
+                    """, arguments: [id, id])
             case .songsAdded(let id, let persistentIDs):
                 // After the playlist's last entry, in the order Music took them, repeats kept.
                 // The joins leave out what the index can't place: a persistent ID no Music-library

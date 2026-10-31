@@ -7,6 +7,7 @@ final class RetroTableView: NSTableView {
     var onReturn: (() -> Void)?
     /// Delete or Forward Delete on the selection.
     var onDelete: (() -> Void)?
+    var canDelete: (() -> Bool)?
     /// ⌘I while this table is focused.
     var onCommandI: (() -> Void)?
     /// ← or → (`right`), alone or with ⌥ (`option`). Return true when used; otherwise the key goes
@@ -79,7 +80,7 @@ final class RetroTableView: NSTableView {
         case 36, 76:   // Return, keypad Enter
             onReturn?()
         case 51, 117:   // Delete, Forward Delete
-            if let onDelete { onDelete() } else { super.keyDown(with: event) }
+            if onDelete != nil { delete(nil) } else { super.keyDown(with: event) }
         case 123, 124:   // ←, →
             let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if modifiers.isSubset(of: .option), onLeftRight?(event.keyCode == 124, modifiers == .option) == true { return }
@@ -87,6 +88,12 @@ final class RetroTableView: NSTableView {
         default:
             super.keyDown(with: event)
         }
+    }
+
+    /// Edit ▸ Clear follows the responder chain, so text fields keep their own delete action.
+    @objc func delete(_ sender: Any?) {
+        guard let onDelete, canDelete?() != false else { NSSound.beep(); return }
+        onDelete()
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -140,5 +147,12 @@ final class RetroTableView: NSTableView {
         let ok = super.resignFirstResponder()
         if ok { onFocusChange?(false) }
         return ok
+    }
+}
+
+extension RetroTableView: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(delete(_:)) { return onDelete != nil && canDelete?() != false }
+        return true
     }
 }
