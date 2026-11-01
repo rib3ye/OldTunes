@@ -113,6 +113,7 @@ targets:
             - SmokeTest.swift
             - AuthCheck.swift
             - MusicAccessProbe.swift
+            - MusicWebPlaylistClient.swift
             - AudioProcessProbe.swift
             - CloudEndProbe.swift
             - StressLibrary.swift

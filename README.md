@@ -208,6 +208,12 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
   music that's playing over AirPlay.
 - **Smart playlist rules.** You cannot change these rules in OldTunes.
   Copying a long playlist, or adding many songs to one, takes a while.
+- **Playlist changes with Music closed.** The normal playlist commands still need the Music app.
+  A development prototype uses Apple's private web API. It passed create, rename, add, remove,
+  and delete checks on a disposable cloud playlist while Music stayed closed.
+  The prototype is not available in the normal interface or release builds yet.
+  It still needs a reliable match between local playlists and their cloud IDs.
+  See the [prototype status and checks](docs/DEVELOPMENT.md#private-web-playlist-prototype).
 - **Sound Check on songs stored on your Mac** can only turn a quiet song up as far as the volume
   slider has room. The Music app can go further.
 - **Keys right as an iCloud song starts.** In its first moment, pressing play/pause or next on
