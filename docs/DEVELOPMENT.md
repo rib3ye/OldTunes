@@ -162,7 +162,64 @@ It also checks playlist song removal through Delete and Clear, text-field focus,
 and preservation of library songs and other playlists. It uses
 an invented library in scratch indexes, never Music.
 
-Four live checks change the real Music library, so they run only with the library owner's
+### Private web playlist prototype
+
+`OLDTUNES_HARNESS=musicwebchecks` runs the private web client's offline checks. It uses fake
+HTTP responses and needs no Apple account.
+
+`OLDTUNES_HARNESS=musicwebplaylists` runs the live prototype. Its default mode only reads
+playlists and songs. It also compares native and cloud playlist identities. Music must be
+closed before the run. The prototype never starts Music or sends it Apple Events.
+
+The client obtains Apple's current web developer token from the public website. Native
+MusicKit supplies the user token. Both tokens stay in memory. Logs exclude tokens, response
+bodies, and personal playlist names. The client leaves the global MusicKit token provider alone.
+
+With the library owner's go-ahead, `OLDTUNES_WEBPLAYLIST_MODE=write` also runs the mutation
+check. It creates one uniquely named `OldTunes Web Test` playlist. It renames that playlist,
+adds an existing library song, removes the song, and deletes the playlist. Each step reads the
+result back from the cloud. Cleanup only targets the playlist created by that run.
+
+The bench observes Music process launches throughout the run. If Music starts, the bench stops
+the test and cleans up its playlist. A failed cleanup reports the fixture ID for recovery.
+The prototype does not change the playlist commands in the normal OldTunes window.
+
+Use the installed app's Developer ID signature for live checks. An Apple Development signature
+can cause macOS to request the Music permission again. From the repository root:
+
+```bash
+xcodegen generate
+xcodebuild -project OldTunes.xcodeproj -scheme OldTunes -configuration Debug -derivedDataPath build/dd CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application: Noah Tsutsui (92N52YB23U)" DEVELOPMENT_TEAM=92N52YB23U build
+open -n -W --stdout /private/tmp/oldtunes-musicweb-read.log --stderr /private/tmp/oldtunes-musicweb-read.err --env OLDTUNES_HARNESS=musicwebplaylists build/dd/Build/Products/Debug/OldTunes.app
+```
+
+For the approved mutation check, add `--env OLDTUNES_WEBPLAYLIST_MODE=write` to the launch command.
+For the offline checks, change the harness name to `musicwebchecks`.
+`OLDTUNES_WEBPLAYLIST_MODE=auth` only checks native authorization and cloud reads. Music can
+already be running in this mode. It does not establish that Music stays closed.
+In read mode, `OLDTUNES_WEBPLAYLIST_INSPECT_ID=p.…` reports membership and metadata presence
+for one cloud playlist. It does not print names or change the library.
+
+Measured on November 1, 2026: the full live check passed in 13.28 seconds. Native authorization
+required no browser sign-in. Create, rename, append, remove, delete, and cleanup all passed.
+The source song remained in the library; its name and play parameters matched the initial read.
+Music stayed closed according to launch observation and an independent process monitor.
+All 48 offline checks passed.
+
+The first live run revealed two API behaviors. An empty playlist's standalone `/tracks`
+endpoint can return 404. Read the parent with `include=tracks` and require an explicit track
+relationship. After deletion, direct lookup can return a nameless, uneditable placeholder.
+Confirm deletion through the complete playlist listing and the placeholder's metadata.
+
+This result covers one cloud-created regular playlist and one existing library song.
+Existing Music-created playlists, duplicate song removal, and batch edits still need live checks.
+The identity diagnostic found 17 native playlists and 11 cloud playlists, with no direct ID
+matches. Native play parameters contained persistent IDs but no matching cloud playlist IDs.
+The normal UI needs a reliable identity mapping before it can use this backend.
+
+### Music scripting checks
+
+Four scripting checks change the real Music library, so they run only with the library owner's
 go-ahead: `musictag` (saves one comment through Music, then puts it back), `musicadd`
 (adds an invented test tone through Add Folder's Music option; `OLDTUNES_MUSICADD_REMOVE`
 takes it back out), `musicplaylists` (makes, renames, duplicates, fills and deletes “OldTunes
