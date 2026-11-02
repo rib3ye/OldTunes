@@ -11,7 +11,8 @@ import Foundation
 /// so this value is not an iTunNORM number. As a factor, −20·log10(energy / 1000) dB is just
 /// 1000 / energy.
 ///
-/// A file gets it as its AVPlayer volume (LocalTransport). An iCloud song plays in Apple's
+/// A file gets it through an audio processing tap before AVPlayer's volume (LocalSoundCheck).
+/// An iCloud song plays in Apple's
 /// RemotePlayerService process, which MusicKit gives no volume for and applies no Sound Check in,
 /// so CloudAudioRoute plays it out again with the gain.
 enum SoundCheck {

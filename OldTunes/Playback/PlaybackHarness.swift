@@ -21,6 +21,12 @@ enum PlaybackHarness {
     static func run() async {
         let mode = ProcessInfo.processInfo.environment["OLDTUNES_PLAYBACK_MODE"] ?? "all"
         Log.info("playback harness: mode=\(mode) auth=\(MusicAuthorization.currentStatus) pid=\(ProcessInfo.processInfo.processIdentifier)")
+        if mode == "soundcheck" {
+            if #available(macOS 14.2, *) { await LocalSoundCheckBench.run() }
+            Log.flush()
+            NSApp.terminate(nil)
+            return
+        }
         if mode == "ab" || mode == "route" || mode == "permission" {
             // Each plays songs from an index of its own, not the harness library, or none.
             if #available(macOS 14.2, *) {
@@ -55,6 +61,8 @@ enum PlaybackHarness {
                 await EdgeBench(loaded).runAll()
             } else if mode == "keys" {
                 await MediaKeyBench(loaded).run()
+            } else if mode == "startup" {
+                await MediaKeyBench(loaded).startup()
             } else if mode == "window" {
                 await MediaKeyBench(loaded).measureWindow()
             } else if mode == "quit" {

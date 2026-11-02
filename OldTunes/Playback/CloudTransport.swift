@@ -20,9 +20,8 @@ final class CloudTransport: Transport {
     var affectsListeningHistory = true
     /// Why the last end-of-song fired, for the log.
     private(set) var lastFinishReason = ""
-    /// Fired when MusicKit's own status turns to .playing. Its player service then makes itself
-    /// the system's Now Playing player, which the coordinator has to take back (see
-    /// NowPlayingPublisher.reclaim()).
+    /// Fallback when the Now Playing opt-out is unavailable. Fired when MusicKit turns to
+    /// .playing, so the coordinator can take back media controls (NowPlayingPublisher.reclaim()).
     var onMusicKitStartedPlaying: (() -> Void)?
     /// Harness only, nil in the app: songs whose load fails the way MusicKit's prepareToPlay
     /// fails for some uploaded songs, without touching MusicKit, so that path can be tested on
@@ -81,6 +80,8 @@ final class CloudTransport: Transport {
     private var starting = false
     private var musicKitWasPlaying = false
     private var appVolume: Float = 0.75
+    /// Whether MusicKit's private macOS adapter accepted the Now Playing opt-out.
+    private(set) var keepsMediaControlsInApp = false
 
     var position: TimeInterval { loaded ? max(0, ApplicationMusicPlayer.shared.playbackTime) : 0 }
     var isPlaying: Bool { loaded && wantsPlay }
@@ -106,6 +107,7 @@ final class CloudTransport: Transport {
             throw error
         }
         let player = ApplicationMusicPlayer.shared
+        keepsMediaControlsInApp = CloudMediaControls.keepCommandsInApp()
         player.state.shuffleMode = .off
         // Fully qualified on purpose: the property is `RepeatMode?`, so a bare `.none` compiles
         // to Optional.none and writes nil instead of "don't repeat" (RESEARCH.md §5.3).
@@ -258,7 +260,7 @@ final class CloudTransport: Transport {
         guard loaded else { return }
         let player = ApplicationMusicPlayer.shared
         let status = player.state.playbackStatus
-        if status == .playing, !musicKitWasPlaying { onMusicKitStartedPlaying?() }
+        if status == .playing, !musicKitWasPlaying, !keepsMediaControlsInApp { onMusicKitStartedPlaying?() }
         musicKitWasPlaying = status == .playing
         route?.watch(playing: status == .playing, position: max(0, player.playbackTime))
         guard !finished else { return }

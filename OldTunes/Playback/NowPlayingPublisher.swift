@@ -9,15 +9,13 @@ import MediaPlayer
 /// Playing player under OldTunes' name instead, which knows only its one-song queue: sent Next it
 /// ends that queue (paused at 0:00), sent Previous it restarts the song (measured in the verify
 /// run). So OldTunes publishes its own entry for both kinds of song and handles every
-/// command here, through the coordinator. macOS delivers each command to one player only, the one
-/// that most recently started playing; that is MusicKit's whenever a cloud song starts or resumes,
-/// so the coordinator calls reclaim() on its next clock tick and again 0.5 s later. Measured with
-/// the Now Playing pid at 25 ms resolution: RemotePlayerService takes over 0.05–0.08 s after
-/// MusicKit starts, and OldTunes has the keys back 0.10–0.16 s after that (0.62–0.73 s when the
-/// only reclaim was 0.5 s later). A key that lands on MusicKit's player in that window is
-/// followed by the cloud transport as a pause (CloudTransport.mirrorExternalControl), so nothing
-/// is handled twice; for Next and Previous that is the wrong action, which is why the window is
-/// kept short.
+/// command here, through the coordinator. CloudMediaControls disables MusicKit's automatic Now
+/// Playing takeover before playback starts. This keeps startup commands on the same queue as
+/// every other command, without temporarily advertising a false pause.
+///
+/// If that optional macOS bridge is unavailable, reclaim() retains the old best-effort behavior:
+/// re-announce playing on the next clock tick and again 0.5 s later. Only this fallback has a
+/// startup window in which MusicKit can receive a key meant for OldTunes's queue.
 @MainActor
 final class NowPlayingPublisher {
     struct Actions: Sendable {
