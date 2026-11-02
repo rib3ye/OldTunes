@@ -6,6 +6,10 @@ import GRDB
 /// re-ingest about 7 s later that rewrites every playlist from Music's own database; until then
 /// the source list shows these.
 extension LibraryIndex {
+    /// Music can acknowledge an edit before iTunesLibrary exposes it. A snapshot must start
+    /// after this window, not merely finish after it. The ingest retries snapshots held here.
+    static let playlistSettleSeconds: TimeInterval = 10
+
     func apply(_ edit: PlaylistEdit) async throws {
         try await pool.write { db in
             var slots = try PlaylistSlot.fetchAll(db)
@@ -77,6 +81,8 @@ extension LibraryIndex {
                 INSERT INTO meta (key, value) VALUES ('playlist_edit_stamp', 1)
                 ON CONFLICT (key) DO UPDATE SET value = value + 1
                 """)
+            try db.execute(sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('playlist_edited_at', ?)",
+                           arguments: [Date().timeIntervalSince1970])
         }
         // Songs going in, chunk after chunk of a long add, are news only to a list showing that
         // playlist; AppController reloads nothing else for them.

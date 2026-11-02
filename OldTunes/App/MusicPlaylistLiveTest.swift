@@ -38,6 +38,8 @@ import iTunesLibrary
 /// stale-playlists retry's back-off rests on (`LibraryIngest.staleRetryWait`, RESEARCH.md §6.10).
 ///
 ///   OLDTUNES_PLAYLIST_SOURCE=<the 16-hex-digit persistent ID of the plain playlist to copy>
+///   OLDTUNES_PLAYLIST_CHECK_CLOUD=1 also reads the test playlist from Apple's cloud before
+///   and after the 40 s wait. It uses the existing experimental web client for reads only.
 ///
 /// That playlist is only read, and needs two different songs, the first two the add uses. Pick a
 /// short one: the copy is filled one song per Apple Event.
@@ -132,7 +134,17 @@ enum MusicPlaylistLiveTest {
             try await editor.deletePlaylist(id)
         }
         do {
-            let folderName = "\(prefix) Folder", renamed = "\(prefix) Playlist (renamed)"
+            let cloud: MusicWebPlaylistClient?
+            let cloudBefore: Set<String>
+            if ProcessInfo.processInfo.environment["OLDTUNES_PLAYLIST_CHECK_CLOUD"] == "1" {
+                cloud = try await MusicWebPlaylistClient.connect()
+                cloudBefore = Set(try await cloud!.playlists().map(\.id))
+            } else {
+                cloud = nil
+                cloudBefore = []
+            }
+            let runID = UUID().uuidString
+            let folderName = "\(prefix) Folder \(runID)", renamed = "\(prefix) Playlist \(runID)"
             // Whether the first command, which may start Music, keeps it out of sight (§6.5).
             Log.info("musicplaylists: before the first command: \(MusicDownloadLiveTest.musicState())")
             let started = Date()
@@ -221,12 +233,32 @@ enum MusicPlaylistLiveTest {
             }
             strays.formUnion(secondChange.copies)
             if secondChange.unnamed > 0 { copiesUnknown = true }
+            Log.info("musicplaylists: second add library songs \(songsBeforeSecond.count) → \(songsAfterSecond.count), " +
+                     "\(secondChange.copies.count + secondChange.unnamed) new, \(secondChange.gone.count) gone")
+            guard second.added == [b, a], seen.ok, secondChange.copies.isEmpty,
+                  secondChange.unnamed == 0, secondChange.gone.isEmpty else {
+                step("add songs to a playlist", false, "the second call did not preserve the library and expected playlist entries")
+                throw TagEditError(message: "The second add did not preserve the library and playlist entries; stopped")
+            }
             let addSeconds = String(format: "%.1f", Date().timeIntervalSince(addStarted))
+            let cloudID: String?
+            if let cloud {
+                cloudID = try await waitForCloudPlaylist(named: renamed, expected: [a, b, a],
+                                                         excluding: cloudBefore, client: cloud)
+                step("scripted entries reached the cloud", true, "three entries in order, with the original song identities")
+            } else {
+                cloudID = nil
+            }
             // Sync Library has been reported to cut a playlist short, or put it back, a little later.
             try? await Task.sleep(for: .seconds(40))
             let later = await reader.playlists()[playlist.id]?.items
+            if let cloud, let cloudID {
+                let remote = try await cloudMemberPIDs(cloudID, client: cloud)
+                step("cloud entries survived the wait", remote == [a, b, a] && later == [a, b, a],
+                     "cloud and iTunesLibrary both retain [a, b, a] 40 s after cloud arrival")
+            }
             step("add songs to a playlist", second.added == [b, a] && seen.ok && later == [a, b, a]
-                    && secondChange.copies.isEmpty && secondChange.unnamed == 0,
+                    && secondChange.copies.isEmpty && secondChange.unnamed == 0 && secondChange.gone.isEmpty,
                  "one song, then two more, one of them again, in \(addSeconds) s (\(second.refused.count) refused" +
                  "\(second.stopReason.map { ", stopped: \($0)" } ?? "")); Music lists them in order with the repeat: " +
                  "\(seen.ok) after \(seen.seconds) s; 40 s later \(later == [a, b, a] ? "the same" : "\(later?.count ?? 0) entries")" +
@@ -300,6 +332,41 @@ enum MusicPlaylistLiveTest {
         step("nothing left behind", behind.isEmpty,
              behind.isEmpty ? "no “\(prefix) …” playlists in Music, and no copy of a song" : behind.joined(separator: "; "))
         Log.info("musicplaylists: SUMMARY " + results.map { "\($0.0)=\($0.1 ? "PASS" : "FAIL")" }.joined(separator: " "))
+    }
+
+    /// Exact UUID name plus absence from the baseline identifies only this run's fixture.
+    /// All cloud access here is read-only. Native song lookup joins remote IDs to persistent IDs.
+    private static func waitForCloudPlaylist(named name: String, expected: [Int64], excluding baseline: Set<String>,
+                                             client: MusicWebPlaylistClient) async throws -> String {
+        let started = Date()
+        while Date().timeIntervalSince(started) < 90 {
+            let matches = try await client.playlists().filter { !baseline.contains($0.id) && $0.attributes?.name == name }
+            guard matches.count <= 1 else { throw TagEditError(message: "More than one cloud test playlist matched; stopped") }
+            if let match = matches.first, try await cloudMemberPIDs(match.id, client: client) == expected {
+                Log.info("musicplaylists: cloud entries appeared after \(String(format: "%.1f", Date().timeIntervalSince(started))) s")
+                return match.id
+            }
+            try await Task.sleep(for: .seconds(2))
+        }
+        throw TagEditError(message: "The scripted playlist did not reach the cloud with the expected song identities within 90 s")
+    }
+
+    private static func cloudMemberPIDs(_ id: String, client: MusicWebPlaylistClient) async throws -> [Int64] {
+        let entries = try await client.tracks(playlistID: id)
+        var mapped: [String: Int64] = [:]
+        var result: [Int64] = []
+        let reader = PersistentIDReader()
+        for entry in entries {
+            if mapped[entry.id] == nil {
+                guard entry.type == "library-songs", let song = try await MusicKitSource.librarySong(cloudID: entry.id),
+                      let pid = reader.persistentID(of: song) else {
+                    throw TagEditError(message: "A cloud playlist entry could not be joined to its original library song")
+                }
+                mapped[entry.id] = pid
+            }
+            result.append(mapped[entry.id]!)
+        }
+        return result
     }
 }
 

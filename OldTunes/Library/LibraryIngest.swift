@@ -91,7 +91,8 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
     /// and nothing else may read them again: Music's last notification can have come before the
     /// edit, and Music may post nothing while a long add goes in. `stalePasses`: such passes in a
     /// row, counting this one; a pass that read them whole sets it back to 0 and needs no retry
-    /// (nil). The first retry comes 5 s later, as a notification's re-ingest would. While every
+    /// (nil). The first retry's base delay is 5 s; performRefresh also waits for edit settling.
+    /// While every
     /// pass finds another edit (an add whose chunks land faster than iTunesLibrary loads), the
     /// wait is 30 s, then twice as long each time, up to 5 minutes, as the max wait is.
     static func staleRetryWait(stale: Bool, stalePasses: inout Int) -> Duration? {
@@ -333,10 +334,10 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
     /// `retrySettled`), so the two never queue two passes.
     private func retryStalePlaylists(after wait: Duration) {
         guard refreshesWaiting == 0 else {
-            Log.info("library: playlists changed while they were being read; the re-ingest waiting its turn reads them again")
+            Log.info("library: playlist snapshot predates an edit or its settling window; the queued re-ingest reads them again")
             return
         }
-        Log.info("library: playlists changed while they were being read; reading them again in \(wait.components.seconds) s")
+        Log.info("library: playlist snapshot predates an edit or its settling window; reading again in \(wait.components.seconds) s")
         pendingRetry?.cancel()
         pendingRetry = Task { [weak self] in
             try? await Task.sleep(for: wait)
@@ -379,6 +380,7 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
         // Read before the snapshot, so a playlist edit applied while iTunesLibrary is being read
         // (an Add to Playlist going in, say) isn't overwritten by a snapshot older than it.
         let playlistStamp = try? await index.playlistEditStamp()
+        let playlistReadStarted = Date()
         let snapshot: ITLibSource.Snapshot
         do {
             snapshot = try await itlib.load()
@@ -402,7 +404,8 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
 
         do {
             let write = try await index.replaceMusicLibrary(snapshot.records, playlists: snapshot.playlists,
-                                                            playlistStamp: playlistStamp)
+                                                            playlistStamp: playlistStamp,
+                                                            playlistReadStarted: playlistReadStarted)
             // Music's songs are in the index as this pass read them.
             lastWrittenRefreshStarted = started
             // The change notification is coarse (§8.5), so many re-ingests find nothing new; a post
@@ -426,14 +429,12 @@ actor LibraryIngest: LibraryIngesting, CloudSongResolving {
             Log.info("library: index write inserted=\(write.inserted) updated=\(write.updated) " +
                      "unchanged=\(write.unchanged) deleted=\(write.deleted) " +
                      "playlists rewritten=\(write.playlistsRewritten) (\(write.playlistItems) items) " +
-                     "edited while reading=\(write.playlistsStale) " +
+                     "playlist snapshot deferred=\(write.playlistsStale) " +
                      "analyzed=\(write.analyzed) in \(Self.ms(write.seconds))")
-            // A playlist edit landed while Music's playlists were read, so they were left alone.
-            // Another pass reads them again, later each time while edits keep landing, and gets
-            // through once they stop (`staleRetryWait`). Here, after the write's own line ("edited
-            // while reading=true"), so the retry's line follows it in the log.
+            // The snapshot predates an edit or began inside its settling window. Retry no sooner
+            // than that window ends, with the existing back-off while edits keep landing.
             if let wait = Self.staleRetryWait(stale: write.playlistsStale, stalePasses: &stalePasses) {
-                retryStalePlaylists(after: wait)
+                retryStalePlaylists(after: max(wait, .seconds(write.playlistRetryAfter)))
             }
         } catch {
             report.status = .failed("The library index could not be written: \(error.localizedDescription)")

@@ -100,8 +100,8 @@ else on your Mac. What that means:
   licensed MD5 in place of a GPL one. `Vendor/README.md` says why and when to remove it.
 - `docs/RESEARCH.md` §7.7 — the dark ("Graphite") colors and how the switch works.
 - `docs/RESEARCH.md` §6.9 and §6.10 — how Download and adding songs to playlists work through
-  the Music app, and what the `musicdownload` and `musicplaylists` live checks still have to
-  measure.
+  the Music app, their measured live results, and the remaining edge cases.
+  `docs/RELIABILITY.md` records the November 1 download and cloud-persistence checks.
 
 ## Test benches
 
@@ -260,6 +260,14 @@ and `musicdownload` (asks Music to download one iCloud song, named by its persis
 `OldTunes/App/MusicTagLiveTest.swift`, `OldTunes/App/MusicAddLiveTest.swift`,
 `OldTunes/App/MusicPlaylistLiveTest.swift` and `OldTunes/App/MusicDownloadLiveTest.swift` say
 how to run them.
+
+The November 1, 2026 runs passed the real download and playlist cloud-persistence checks.
+See [the validation record](RELIABILITY.md) for commands, timings, and retained log excerpts.
+Set `OLDTUNES_PLAYLIST_CHECK_CLOUD=1` for independent cloud readback in `musicplaylists`.
+The harness identifies its UUID-named playlist from the pre-run cloud IDs.
+It joins remote song IDs to native persistent IDs and compares the order before and after a 40-second wait.
+These web-client calls only read data. The real scripting editor still makes every playlist change.
+Without this flag, the harness checks local persistence only.
 
 `musicdownload` is the only one that always leaves something behind. Music has no scripting
 command to remove a download, so the downloaded file stays on the Mac, using disk space, until

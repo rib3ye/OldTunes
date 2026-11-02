@@ -15,7 +15,8 @@ struct MusicSongDownloader: SongDownloading {
 
     /// How long to wait for each of Music's answers, in seconds; nil is the session's 30 s. The
     /// live download check waits 10 minutes, to learn whether Music answers `download` at once or
-    /// only once the file is here (RESEARCH.md §10-R7).
+    /// only once the file is here. On Nov 1, 2026 Music answered in 0.3 s; the uploaded song's
+    /// file first appeared at 5.3 s. The default remains 30 s (RESEARCH.md §10-R7).
     var replyTimeout: TimeInterval?
 
     func prepare() async -> String? {

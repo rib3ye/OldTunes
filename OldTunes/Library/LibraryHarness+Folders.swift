@@ -512,7 +512,7 @@ extension LibraryHarnessBench {
     }
 
     /// A re-ingest that read Music's playlists before a playlist edit landed leaves them as edited
-    /// and stores no hash (RESEARCH.md §6.8), then reads them again by itself 5 s later, on its own
+    /// and stores no hash (RESEARCH.md §6.8), then retries after the delay and settling window, on its own
     /// path, not through the change debounce: Music's last notice may have come before the edit,
     /// and then nothing else would rewrite them (LibraryIngest.staleRetryWait; the log says
     /// "library: playlists changed while they were being read; reading them again in 5 s"). The
@@ -548,7 +548,7 @@ extension LibraryHarnessBench {
         let restored = try await index.playlists().first { $0.id == list.id }?.name
         let counts = notices.counts(since: began)
         checkCounting("a re-ingest that read the playlists before an edit landed leaves the edit, and one more pass follows by "
-                      + "itself, about 5 s later, and rewrites them from Music",
+                      + "itself, after the retry delay and settling window, and rewrites them from Music",
                       kept == edited && after == before + 2 && restored == list.name && gap < 15 && counts.heard == counts.posted,
                       "playlist \(MusicPersistentID.hex(list.id)): edit kept \(kept == edited), \(after - before) refreshes, "
                       + "Music's name back \(restored == list.name); the second began \(fmt(gap)) s after the first ended",

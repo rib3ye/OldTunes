@@ -520,11 +520,32 @@ extension ListsPlaylistBench {
                   stale.playlistsStale && !stale.playlistsRewritten && kept == applied && staleHash == 0
                   && stale.unchanged == Self.songsForAdds.count,
                   "stale \(stale.playlistsStale), rewritten \(stale.playlistsRewritten), Workout \(kept.count) entries, hash rows \(staleHash)")
+            let editedAt = try await index.pool.read { db in
+                try Double.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'playlist_edited_at'") ?? 0
+            }
+            let afterEdit = try await index.playlistEditStamp()
+            let lagging = try await index.replaceMusicLibrary(Self.songsForAdds, playlists: Self.playlistsForAdds,
+                                                              playlistStamp: afterEdit,
+                                                              playlistReadStarted: Date(timeIntervalSince1970: editedAt + 1))
+            let keptAfterEdit = try await entries(702).map(\.pid)
+            let laggingHash = try await number(hashSQL)
+            check("a refresh that starts after an edit still keeps its songs while Music's snapshot settles",
+                  lagging.playlistsStale && !lagging.playlistsRewritten && keptAfterEdit == applied && laggingHash == 0)
+            // Even if the write happens well after the window, it is the read's start that matters.
+            try await index.pool.write { db in
+                try db.execute(sql: "UPDATE meta SET value = ? WHERE key = 'playlist_edited_at'", arguments: [editedAt - 60])
+            }
+            let slow = try await index.replaceMusicLibrary(Self.songsForAdds, playlists: Self.playlistsForAdds,
+                                                           playlistStamp: afterEdit,
+                                                           playlistReadStarted: Date(timeIntervalSince1970: editedAt - 51))
+            check("a slow snapshot that began inside the settling window cannot overwrite the edit after the window ends",
+                  slow.playlistsStale && !slow.playlistsRewritten)
             let fresh = try await index.replaceMusicLibrary(Self.songsForAdds, playlists: Self.playlistsForAdds,
-                                                            playlistStamp: try await index.playlistEditStamp())
+                                                            playlistStamp: afterEdit,
+                                                            playlistReadStarted: Date(timeIntervalSince1970: editedAt - 50))
             let lakesideAgain = try await entries(701).map(\.pid), workoutAgain = try await entries(702).map(\.pid)
             let freshHash = try await number(hashSQL)
-            check("…so the next one, which read after the edit, rewrites them from Music's own snapshot",
+            check("at the settling boundary, Music's snapshot wins even if it rolled back the edit; the hash is stored again",
                   fresh.playlistsRewritten && !fresh.playlistsStale && lakesideAgain == [1001, 1003, 1001]
                   && workoutAgain == [1002, 1004, 1006] && freshHash == 1,
                   "rewritten \(fresh.playlistsRewritten), Lakeside \(lakesideAgain), Workout \(workoutAgain), hash rows \(freshHash)")
@@ -560,6 +581,33 @@ extension ListsPlaylistBench {
                   early == "Lakeside" && named == "Lakeside 2" && unread.playlistCount == Self.playlistsForAdds.count
                   && unread.unusedName("Lakeside") == "Lakeside 2", "unread: “\(early)”, read: “\(named)”")
             await failedReadChecks(over: index, taken: "Lakeside")
+
+            try await index.apply(.songsRemoved(701, persistentIDs: [1001]))
+            try await index.apply(.deleted(501))
+            // Reopening the same database must keep the window, including across app relaunch.
+            let reopened = try LibraryIndex(path: index.url)
+            let lastEdit = try await reopened.pool.read { db in
+                try Double.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'playlist_edited_at'") ?? 0
+            }
+            var downloaded = Self.songsForAdds
+            downloaded[0] = Self.downloaded(downloaded[0], as: .local)
+            let held = try await reopened.replaceMusicLibrary(downloaded, playlists: Self.playlistsForAdds,
+                                                              playlistStamp: try await reopened.playlistEditStamp(),
+                                                              playlistReadStarted: Date(timeIntervalSince1970: lastEdit + 1))
+            let heldLists = try await reopened.playlists()
+            let heldEntries = try await entries(701).map(\.pid)
+            check("settling survives reopening and protects renames, new playlists, removals and deleted folders",
+                  held.playlistsStale && heldLists.contains { $0.id == 702 && $0.name == "Workout Again" }
+                  && heldLists.contains { $0.id == 990 } && !heldLists.contains { $0.id == 501 || $0.parentID == 501 }
+                  && heldEntries == [1003])
+            check("playlist settling still ingests a completed download and supplies a bounded retry delay",
+                  held.updated == 1 && held.changedIndex && held.playlistRetryAfter > 0
+                  && held.playlistRetryAfter <= LibraryIndex.playlistSettleSeconds)
+            let settled = try await reopened.replaceMusicLibrary(downloaded, playlists: Self.playlistsForAdds,
+                                                                 playlistStamp: try await reopened.playlistEditStamp(),
+                                                                 playlistReadStarted: Date(timeIntervalSince1970: lastEdit + 10))
+            check("a read after settling reconciles all playlist edits without delaying song updates",
+                  settled.playlistsRewritten && !settled.playlistsStale && settled.updated == 0)
         } catch {
             check("adds on a scratch index of their own", false, "\(error)")
         }
