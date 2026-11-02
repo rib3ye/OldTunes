@@ -15,8 +15,9 @@ final class DownloadWatch {
     /// The watch then has the library read once more before it gives up (`tick`).
     static let quietLimit: TimeInterval = 15 * 60
     /// The longest the library goes unread while songs are on their way and Music isn't posting
-    /// its change notification, in case it doesn't post one when a file lands (not measured yet,
-    /// RESEARCH.md §10-R7). While Music keeps posting, the re-read this asks for gives way to the
+    /// its change notification. The live check received notices (+3.9 and +7.1 s on Nov 1, 2026),
+    /// but this fallback also covers missed notices (RESEARCH.md §10-R7). While Music keeps posting,
+    /// the re-read this asks for gives way to the
     /// one Music's notifications have scheduled (`LibraryIngest.refreshIfIdle`), so re-reads
     /// follow the change back-off, up to 5 minutes apart (`LibraryIngest.changeWait`).
     static let refreshInterval: TimeInterval = 3 * 60

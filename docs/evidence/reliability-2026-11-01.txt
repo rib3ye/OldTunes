@@ -1,0 +1,97 @@
+Download and playlist reliability evidence — November 1, 2026
+macOS 27.0.1 (26A434), signed sandboxed Bench build.
+Selected stdout lines. Song titles, file paths, and credentials are not included.
+
+=== download ===
+2026-11-01T22:14:11-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: 6FC98CDFE5FCF3E5, 4 s long, 5 songs are files before; Music hidden true, active false; in front: com.noahtsutsui.oldtunes
+2026-11-01T22:14:11-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: Music ready: Music hidden true, active false; in front: com.noahtsutsui.oldtunes
+2026-11-01T22:14:14-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: Music answered after 0.3 s: requested; Music hidden true, active false; in front: com.noahtsutsui.oldtunes
+2026-11-01T22:14:14-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: PASS Music took the request — requested after 0.3 s
+2026-11-01T22:14:19-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: Music lists it as a file after 5.3 s: .mp3, a plain file
+2026-11-01T22:14:19-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: its file is there after 5.3 s
+2026-11-01T22:14:19-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: 117195 bytes after 5.3 s
+2026-11-01T22:14:19-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: during, after 5.3 s: Music hidden true, active false; in front: com.roblox.RobloxPlayer
+2026-11-01T22:14:23-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: Music posted 2 library-changed notifications, at +3.9 +7.1 s
+2026-11-01T22:14:23-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: PASS the song came down as a file — listed as a file at 5.3 s, there at 5.3 s, its size still at 9.1 s: 117195 bytes
+2026-11-01T22:14:23-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: PASS the same song, by its persistent ID — still 6FC98CDFE5FCF3E5
+2026-11-01T22:14:24-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: PASS exactly one more song is a file — 5 → 6
+2026-11-01T22:14:24-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: the file: .mp3, a plain file, OldTunes may open it, protected: no
+2026-11-01T22:14:24-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: a second download of the song, now a file, answered after 0.1 s: error -1708 to the download: Music couldn’t download the song: The operation couldn’t be completed. (OSStatus error -1708.) (error -1708).; Download would read it as refused("Music couldn’t download the song: The operation couldn’t be completed. (OSStatus error -1708.) (error -1708).", code: Optional(-1708))
+2026-11-01T22:14:24-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: after: Music hidden true, active false; in front: com.roblox.RobloxPlayer
+2026-11-01T22:14:24-0800 INFO [OldTunes/MusicDownloadLiveTest.swift] musicdownload: SUMMARY Music took the request=PASS the song came down as a file=PASS the same song, by its persistent ID=PASS exactly one more song is a file=PASS; remove the download by hand: Music ▸ the song ▸ Remove Download
+
+=== playlists ===
+2026-11-01T22:14:38-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: before the first command: Music hidden true, active false; in front: com.noahtsutsui.oldtunes
+2026-11-01T22:14:39-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: made folder E1D49ECEDD22197F in 1.1 s (includes starting Music and any permission prompt); Music hidden true, active false; in front: com.roblox.RobloxPlayer
+2026-11-01T22:14:41-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS new folder — Music lists it after 1.6 s
+2026-11-01T22:14:46-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS new playlist inside the folder — editor says parent E1D49ECEDD22197F; Music lists E1D49ECEDD22197F after 4.2 s
+2026-11-01T22:14:48-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS rename — Music reads “OldTunes Test Playlist D09DB979-5196-4825-B52C-94936F6EE8A8” after 1.4 s
+2026-11-01T22:14:49-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: before the first add: Music hidden true, active false; in front: com.roblox.RobloxPlayer
+2026-11-01T22:14:49-0800 INFO [OldTunes/MusicPlaylistEditor.swift] playlists: Music added 1 of 1 songs to E1541C6C8E049595 in 0.1 s, 0 refused
+2026-11-01T22:14:52-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: the first add call took 0.11 s for 1 song, 0.11 s a song; Music posted 0 library-changed notices from its start until the read after its wait
+2026-11-01T22:14:52-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: added one song in 2.8 s: 1 added, 0 refused; Music lists ["E7EE7F82ABF663E2"] after 1.4 s; library songs 15903 → 15903, 0 new, 0 gone; Music hidden true, active false; in front: com.roblox.RobloxPlayer
+2026-11-01T22:14:54-0800 INFO [OldTunes/MusicPlaylistEditor.swift] playlists: Music added 2 of 2 songs to E1541C6C8E049595 in 0.2 s, 0 refused
+2026-11-01T22:14:56-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: the second add call took 0.15 s for 2 songs, 0.08 s a song; Music posted 1 library-changed notice from its start until the read after its wait, at +2.5 s
+2026-11-01T22:14:58-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: cloud entries appeared after 2.0 s
+2026-11-01T22:14:58-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS scripted entries reached the cloud — three entries in order, with the original song identities
+2026-11-01T22:15:44-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS cloud entries survived the wait — cloud and iTunesLibrary both retain [a, b, a] 40 s after cloud arrival
+2026-11-01T22:15:44-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS add songs to a playlist — one song, then two more, one of them again, in 7.0 s (0 refused); Music lists them in order with the repeat: true after 1.4 s; 40 s later the same
+2026-11-01T22:15:44-0800 INFO [OldTunes/MusicPlaylistEditor.swift] playlists: Music copied 2 songs into the duplicate 9DE83C534E8BB393
+2026-11-01T22:15:47-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS duplicate — 2 songs copied in 0.6 s; Music's copy has 2 in the original's order: true
+2026-11-01T22:15:56-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS delete a playlist — gone from Music after 4.4 s
+2026-11-01T22:16:03-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS delete a folder with its playlist — folder gone: true, playlist gone: true, after 3.2 s
+2026-11-01T22:16:06-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS the copied playlist is untouched — 2 songs
+2026-11-01T22:16:13-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS nothing left behind — no “OldTunes Test …” playlists in Music, and no copy of a song
+2026-11-01T22:16:13-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: SUMMARY new folder=PASS new playlist inside the folder=PASS rename=PASS scripted entries reached the cloud=PASS cloud entries survived the wait=PASS add songs to a playlist=PASS duplicate=PASS delete a playlist=PASS delete a folder with its playlist=PASS the copied playlist is untouched=PASS nothing left behind=PASS
+
+=== lists ===
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a re-ingest whose snapshot may be older than an edit leaves the playlists as edited and stores no hash — stale true, rewritten false, Workout 6 entries, hash rows 0
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a refresh that starts after an edit still keeps its songs while Music's snapshot settles
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a slow snapshot that began inside the settling window cannot overwrite the edit after the window ends
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS at the settling boundary, Music's snapshot wins even if it rolled back the edit; the hash is stored again — rewritten true, Lakeside [1001, 1003, 1001], Workout [1002, 1004, 1006], hash rows 1
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS settling survives reopening and protects renames, new playlists, removals and deleted folders
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS playlist settling still ingests a completed download and supplies a bounded retry delay
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a read after settling reconciles all playlist edits without delaying song updates
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: SUMMARY passed=247 failed=0
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsHarness.swift] lists: TOTAL passed=248 failed=0
+2026-11-01T22:21:21-0800 INFO [OldTunes/ListsHarness.swift] lists: EVERYTHING PASSED
+
+Download cleanup: Music UI Remove Download, followed by Music scripting readback:
+6FC98CDFE5FCF3E5, shared track, uploaded, 5 file tracks in library playlist 1
+
+=== playlists, strengthened second-add assertion ===
+2026-11-01T22:27:30-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: before the first command: Music hidden true, active false; in front: com.noahtsutsui.oldtunes
+2026-11-01T22:27:31-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: made folder DF4E41753E1BBC3F in 1.1 s (includes starting Music and any permission prompt); Music hidden true, active false; in front: com.brave.Browser
+2026-11-01T22:27:32-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS new folder — Music lists it after 1.6 s
+2026-11-01T22:27:37-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS new playlist inside the folder — editor says parent DF4E41753E1BBC3F; Music lists DF4E41753E1BBC3F after 4.1 s
+2026-11-01T22:27:39-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS rename — Music reads “OldTunes Test Playlist C41B69B3-63C6-46D2-B8BD-04DF2A9765D7” after 1.6 s
+2026-11-01T22:27:41-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: before the first add: Music hidden true, active false; in front: com.brave.Browser
+2026-11-01T22:27:41-0800 INFO [OldTunes/MusicPlaylistEditor.swift] playlists: Music added 1 of 1 songs to 0E8610D80B23869C in 0.1 s, 0 refused
+2026-11-01T22:27:44-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: the first add call took 0.14 s for 1 song, 0.14 s a song; Music posted 0 library-changed notices from its start until the read after its wait
+2026-11-01T22:27:44-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: added one song in 3.3 s: 1 added, 0 refused; Music lists ["E7EE7F82ABF663E2"] after 1.8 s; library songs 15903 → 15903, 0 new, 0 gone; Music hidden true, active false; in front: com.brave.Browser
+2026-11-01T22:27:46-0800 INFO [OldTunes/MusicPlaylistEditor.swift] playlists: Music added 2 of 2 songs to 0E8610D80B23869C in 0.2 s, 0 refused
+2026-11-01T22:27:49-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: the second add call took 0.20 s for 2 songs, 0.10 s a song; Music posted 1 library-changed notice from its start until the read after its wait, at +2.7 s
+2026-11-01T22:27:49-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: second add library songs 15903 → 15903, 0 new, 0 gone
+2026-11-01T22:27:51-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: cloud entries appeared after 2.2 s
+2026-11-01T22:27:51-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS scripted entries reached the cloud — three entries in order, with the original song identities
+2026-11-01T22:28:38-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS cloud entries survived the wait — cloud and iTunesLibrary both retain [a, b, a] 40 s after cloud arrival
+2026-11-01T22:28:38-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS add songs to a playlist — one song, then two more, one of them again, in 7.8 s (0 refused); Music lists them in order with the repeat: true after 1.5 s; 40 s later the same
+2026-11-01T22:28:39-0800 INFO [OldTunes/MusicPlaylistEditor.swift] playlists: Music copied 2 songs into the duplicate 3EA8329AAED792F8
+2026-11-01T22:28:43-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS duplicate — 2 songs copied in 1.1 s; Music's copy has 2 in the original's order: true
+2026-11-01T22:28:53-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS delete a playlist — gone from Music after 5.1 s
+2026-11-01T22:29:03-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS delete a folder with its playlist — folder gone: true, playlist gone: true, after 4.9 s
+2026-11-01T22:29:08-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS the copied playlist is untouched — 2 songs
+2026-11-01T22:29:19-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: PASS nothing left behind — no “OldTunes Test …” playlists in Music, and no copy of a song
+2026-11-01T22:29:19-0800 INFO [OldTunes/MusicPlaylistLiveTest.swift] musicplaylists: SUMMARY new folder=PASS new playlist inside the folder=PASS rename=PASS scripted entries reached the cloud=PASS cloud entries survived the wait=PASS add songs to a playlist=PASS duplicate=PASS delete a playlist=PASS delete a folder with its playlist=PASS the copied playlist is untouched=PASS nothing left behind=PASS
+
+=== final validation build, offline regression rerun ===
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a re-ingest whose snapshot may be older than an edit leaves the playlists as edited and stores no hash — stale true, rewritten false, Workout 6 entries, hash rows 0
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a refresh that starts after an edit still keeps its songs while Music's snapshot settles
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a slow snapshot that began inside the settling window cannot overwrite the edit after the window ends
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS at the settling boundary, Music's snapshot wins even if it rolled back the edit; the hash is stored again — rewritten true, Lakeside [1001, 1003, 1001], Workout [1002, 1004, 1006], hash rows 1
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS settling survives reopening and protects renames, new playlists, removals and deleted folders
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS playlist settling still ingests a completed download and supplies a bounded retry delay
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: PASS a read after settling reconciles all playlist edits without delaying song updates
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsPlaylistBench.swift] lists-playlists: SUMMARY passed=247 failed=0
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsHarness.swift] lists: TOTAL passed=248 failed=0
+2026-11-01T22:29:43-0800 INFO [OldTunes/ListsHarness.swift] lists: EVERYTHING PASSED

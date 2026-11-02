@@ -13,9 +13,11 @@ extension LibraryIndex {
         var playlistItems = 0
         /// False when the playlists hashed the same as last time and were left alone.
         var playlistsRewritten = false
-        /// True when a playlist edit was applied while Music's playlists were being read, so they
-        /// were left alone for the next re-ingest (see `replaceMusicLibrary`).
+        /// True when the snapshot predates an edit or began before Music had time to expose it.
+        /// The playlists stay as edited and the ingest schedules another read.
         var playlistsStale = false
+        /// Minimum delay before a retry may start a new snapshot, in seconds from this write.
+        var playlistRetryAfter: TimeInterval = 0
         var analyzed = false
         var seconds: Double = 0
 
@@ -31,9 +33,11 @@ extension LibraryIndex {
     /// from Music. If an edit has been applied since (an Add to Playlist going in, say), the
     /// snapshot may be from before it, and writing it would take the edit off screen until the
     /// next re-ingest. So the playlists are left as they are, and no hash is stored, which makes
-    /// that next re-ingest rewrite them. Nil (the benches) writes them as before.
+    /// that next re-ingest rewrite them. `playlistReadStarted` also protects reads that begin
+    /// just after an edit, while iTunesLibrary can still expose the old playlists. Nil stamps
+    /// (the benches) write them as before.
     func replaceMusicLibrary(_ records: [SongRecord], playlists: [PlaylistRecord],
-                             playlistStamp: Int64? = nil) async throws -> MusicLibraryWrite {
+                             playlistStamp: Int64? = nil, playlistReadStarted: Date = Date()) async throws -> MusicLibraryWrite {
         let started = Date()
         var result = try await pool.write { db -> MusicLibraryWrite in
             var result = MusicLibraryWrite()
@@ -67,8 +71,11 @@ extension LibraryIndex {
             // Inserted or deleted songs change the id mapping, so those force a rewrite too. A
             // song deleted meanwhile has already taken its playlist entries with it (cascade).
             result.playlists = playlists.count
-            if let playlistStamp, try Self.playlistEditStamp(db) != playlistStamp {
+            let editedAt = try Double.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'playlist_edited_at'")
+            let settling = editedAt.map { playlistReadStarted.timeIntervalSince1970 < $0 + Self.playlistSettleSeconds } ?? false
+            if let playlistStamp, try Self.playlistEditStamp(db) != playlistStamp || settling {
                 result.playlistsStale = true
+                result.playlistRetryAfter = max(0, (editedAt ?? 0) + Self.playlistSettleSeconds - Date().timeIntervalSince1970)
             } else {
                 let playlistHash = Self.hash(playlists)
                 let storedHash = try Int64.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'playlists_hash'")
