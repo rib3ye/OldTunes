@@ -156,7 +156,8 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 - **Light or dark.** In OldTunes ▸ Settings (⌘,), pick Light (the 2005 look), Dark, or Match
   System, which follows your Mac. Match System is the default.
 - **Sound Check**, also in Settings, plays every song about equally loud, using the levels the
-  Music app measured. It's off until you turn it on.
+  Music app measured. It can raise quiet files above their original level.
+  Sound Check is off until you turn it on.
 - **Its own volume.** The volume slider (or ⌘↑ and ⌘↓) changes only OldTunes, not your whole Mac.
   OldTunes remembers it.
 - **Visualizer.** Click the flower button at the bottom right, or press ⌘T, to swap the song list
@@ -178,6 +179,7 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 | Key | What it does |
 |---|---|
 | Space | Play or pause (not while you're typing) |
+| Keyboard media keys | Play or pause, next song, previous song |
 | Return, or double-click | Play the selected song |
 | ⌘→ / ⌘← | Next / previous song (⌘← first goes back to the start if the song has played for more than 3 seconds) |
 | ⌘↑ / ⌘↓ | Volume up / down |
@@ -214,10 +216,6 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
   The prototype is not available in the normal interface or release builds yet.
   It still needs a reliable match between local playlists and their cloud IDs.
   See the [prototype status and checks](docs/DEVELOPMENT.md#private-web-playlist-prototype).
-- **Sound Check on songs stored on your Mac** can only turn a quiet song up as far as the volume
-  slider has room. The Music app can go further.
-- **Keys right as an iCloud song starts.** In its first moment, pressing play/pause or next on
-  your keyboard can pause the song.
 - **The equalizer and eject buttons** are only for looks.
 
 ---

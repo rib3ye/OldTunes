@@ -74,7 +74,8 @@ final class PlaybackCoordinator: PlaybackControlling {
     /// permission) does the slider move the Mac's volume during that song, and show it.
     private(set) var appVolume: Float = 0.75
     private var ticks = 0
-    /// When to take the media keys back after MusicKit starts playing, in seconds. Measured with
+    /// Fallback when CloudMediaControls is unavailable: take the media keys back after MusicKit
+    /// starts playing, in seconds. Measured with
     /// the Now Playing pid at 25 ms resolution: MusicKit's player takes over 0.05–0.08 s after it
     /// starts; reclaiming on the first tick then gives the keys back 0.10–0.16 s after the
     /// takeover (it was 0.62–0.73 s with a single 0.5 s delay). The 0.5 s retry covers a first
@@ -792,7 +793,7 @@ final class PlaybackCoordinator: PlaybackControlling {
                   let track = rows.first(where: \.isChecked),
                   let url = track.fileURL, FileManager.default.fileExists(atPath: url.path),
                   !Self.isDirectory(url) else { return }
-            await self.local.preload(url)
+            await self.local.preload(url, soundCheckGain: SoundCheck.gain(energy: track.soundCheckEnergy))
         }
     }
 

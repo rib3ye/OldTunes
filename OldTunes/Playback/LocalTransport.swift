@@ -12,6 +12,7 @@ final class LocalTransport: Transport {
     var onError: ((Error) -> Void)?
 
     private let player = AVQueuePlayer()
+    private let soundCheck = LocalSoundCheck()
     private(set) var duration: TimeInterval = 0
     /// Bumped by load() and stop(), so a load that finishes awaiting after a stop() gives up.
     private var loadToken = 0
@@ -43,7 +44,7 @@ final class LocalTransport: Transport {
 
     var isPlaying: Bool { player.currentItem != nil && player.rate != 0 }
 
-    /// The slider's setting. The player gets this times the Sound Check gain.
+    /// The slider's setting, applied after each item's Sound Check processing.
     var volume: Float {
         get { sliderVolume }
         set {
@@ -54,30 +55,23 @@ final class LocalTransport: Transport {
 
     /// Settings ▸ Sound Check.
     var isSoundCheckOn = false {
-        didSet { applyVolume() }
+        didSet { soundCheck.isEnabled = isSoundCheckOn }
     }
 
-    /// The Sound Check gain of the song being loaded or played, as a factor (SoundCheck). The player
-    /// has one volume for every item, so the coordinator sets this just before each load, while
-    /// nothing is sounding; a preloaded file then starts at its own level.
-    var soundCheckGain: Float = 1 {
-        didSet { applyVolume() }
-    }
+    /// The next load's normalization gain. Each queued item retains its own gain.
+    var soundCheckGain: Float = 1
 
     private var sliderVolume: Float = 1
 
-    /// What AVPlayer was given: the slider times the gain. For the harness's logs.
+    /// What AVPlayer was given: the slider, separate from the item's normalization gain.
     var playerVolume: Float { player.volume }
 
     /// The file queued behind the current one, if any. For the playback bench, which checks
     /// that a protected download or a package is never queued.
     var preloadedURL: URL? { preloaded?.url }
 
-    /// AVPlayer's volume stops at 1, the file's own level. So a song Sound Check makes louder
-    /// (energy under 1000) is matched only as far as the slider leaves room: exactly while
-    /// slider × gain ≤ 1, and held at the file's own level above that.
     private func applyVolume() {
-        player.volume = min(sliderVolume * (isSoundCheckOn ? soundCheckGain : 1), 1)
+        player.volume = sliderVolume
     }
 
     /// Throws `.protected` for a protected download, which AVFoundation may still call playable
@@ -107,16 +101,19 @@ final class LocalTransport: Transport {
         guard token == loadToken else { throw CancellationError() }
         guard !protected else { throw TransportError.protected }
         guard playable else { throw TransportError.notPlayable }
+        let item = AVPlayerItem(asset: asset)
+        try await soundCheck.attach(to: item, gain: soundCheckGain)
+        guard token == loadToken else { throw CancellationError() }
         preloaded = nil
         player.removeAllItems()
-        player.insert(AVPlayerItem(asset: asset), after: nil)
+        player.insert(item, after: nil)
         duration = length.seconds.isFinite ? length.seconds : 0
     }
 
     /// Queues `url` behind the current item so its decode overlaps the current song's playback.
     /// Not a protected download: queued, it would sit behind this song only to fail when reached,
     /// while its own start sends it to iCloud.
-    func preload(_ url: URL) async {
+    func preload(_ url: URL, soundCheckGain: Float = 1) async {
         guard player.currentItem != nil, preloaded?.url != url else { return }
         let token = loadToken
         let asset = AVURLAsset(url: url)
@@ -124,8 +121,10 @@ final class LocalTransport: Transport {
         guard let protected = try? await asset.load(.hasProtectedContent), !protected else { return }
         // A load() or stop() meanwhile changed what is playing.
         guard token == loadToken, player.currentItem != nil, preloaded?.url != url else { return }
-        for item in player.items().dropFirst() { player.remove(item) }
         let item = AVPlayerItem(asset: asset)
+        guard (try? await soundCheck.attach(to: item, gain: soundCheckGain)) != nil,
+              token == loadToken, player.currentItem != nil, preloaded?.url != url else { return }
+        for item in player.items().dropFirst() { player.remove(item) }
         player.insert(item, after: player.currentItem)
         preloaded = (url, asset, item)
     }

@@ -162,6 +162,37 @@ It also checks playlist song removal through Delete and Clear, text-field focus,
 and preservation of library songs and other playlists. It uses
 an invented library in scratch indexes, never Music.
 
+### Playback regression checks
+
+`OLDTUNES_PLAYBACK_MODE=soundcheck` uses generated tones and a muted tap on OldTunes's output.
+It measures amplification, attenuation, the volume slider, mute, pause, seek, and the gain of a preloaded song.
+It changes no library data or saved settings. System Audio Recording permission is necessary for this measurement.
+Normal local-file Sound Check needs no recording permission.
+
+`OLDTUNES_PLAYBACK_MODE=startup` checks media commands during cloud starts, resumes, and transitions from local and cloud songs.
+The reclaim timer stays disabled. An external driver sends commands only when macOS identifies the bench process as the current player.
+The driver uses private MediaRemote calls. Each bench uses the `playback` harness and quits after its checks.
+
+From the repository root, after a Debug build with the installed app's Developer ID signature:
+
+```bash
+swiftc tools/media-key-driver.swift -o /private/tmp/oldtunes-media-key-driver
+run_dir=$(mktemp -d /private/tmp/oldtunes-media-keys.XXXXXX)
+/private/tmp/oldtunes-media-key-driver "$run_dir/startup.log" > "$run_dir/driver.log" 2>&1 &
+driver_pid=$!
+open -n -W --stdout "$run_dir/startup.log" --stderr "$run_dir/startup.err" --env OLDTUNES_HARNESS=playback --env OLDTUNES_PLAYBACK_MODE=startup build/dd/Build/Products/Debug/OldTunes.app
+wait "$driver_pid"
+open -n -W --stdout "$run_dir/soundcheck.log" --stderr "$run_dir/soundcheck.err" --env OLDTUNES_HARNESS=playback --env OLDTUNES_PLAYBACK_MODE=soundcheck build/dd/Build/Products/Debug/OldTunes.app
+```
+
+`CloudMediaControls` uses a guarded private macOS setting to prevent MusicKit from taking control of media commands.
+This change targets Developer ID distribution. A Mac App Store build needs a public replacement.
+If the setting is unavailable, OldTunes retains its earlier reclaim behavior, including the brief startup limitation.
+`LocalSoundCheck` uses public MediaToolbox audio processing taps. Each queued item keeps its own gain, before AVPlayer applies the volume slider.
+
+Measured November 1, 2026 on macOS 27.0.1: all 24 startup checks and 11 audio checks passed.
+Debug and Release builds passed in an isolated source copy because unrelated playlist work was in progress in the shared checkout.
+
 ### Private web playlist prototype
 
 `OLDTUNES_HARNESS=musicwebchecks` runs the private web client's offline checks. It uses fake

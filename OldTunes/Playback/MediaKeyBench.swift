@@ -38,9 +38,63 @@ final class MediaKeyBench {
     func run() async {
         await phase("local", start: l1, next: l2, queue: [l1, l2, c1])
         await phase("cloud", start: c1, next: c2, queue: [c1, c2, l1])
-        await takeoverWindow()
         player.stop()
         Log.info("KEYS-END \(passed) PASS, \(failed) FAIL")
+    }
+
+    /// The external driver sends one system command after each STARTUP-READY marker. Reclaim is
+    /// disabled: this checks that MusicKit never takes the keys, rather than winning them back.
+    func startup() async {
+        player.nowPlayingReclaimDelays = []
+        player.setVolume(0.15)
+        let scenarios = [0, 30, 80, 150, 500].map { ("start", $0) }
+            + [("resume", 80), ("local-to-cloud", 80), ("cloud-to-cloud", 80)]
+        for (scenario, delay) in scenarios {
+            for command in ["next", "previous", "toggle"] {
+                player.stop()
+                let before = scenario == "local-to-cloud" ? l2 : c1
+                let queue = [before.id, c2.id, l1.id]
+                player.play(queue: queue, startAt: scenario.hasSuffix("to-cloud") ? before.id : c2.id)
+                if scenario.hasSuffix("to-cloud") {
+                    _ = await ready(before.id)
+                    player.next()
+                }
+                guard await ready(c2.id) else {
+                    failed += 1
+                    Log.info("FAIL startup \(scenario): cloud song did not start")
+                    continue
+                }
+                if scenario == "resume" {
+                    player.playPause()
+                    try? await Task.sleep(for: .milliseconds(300))
+                    player.playPause()
+                    guard await ready(c2.id) else {
+                        failed += 1
+                        Log.info("FAIL startup resume: cloud song did not resume")
+                        continue
+                    }
+                }
+                Log.info("STARTUP-READY scenario=\(scenario) cmd=\(command) delay=\(delay) pid=\(ProcessInfo.processInfo.processIdentifier) bridge=\(player.cloud.keepsMediaControlsInApp)")
+                try? await Task.sleep(for: .seconds(2.5))
+                let expected = command == "next" ? l1.id : command == "previous" ? before.id : c2.id
+                let ok = player.state.nowPlaying?.id == expected
+                    && !player.state.isLoading && player.state.isPlaying == (command != "toggle")
+                if ok { passed += 1 } else { failed += 1 }
+                Log.info("\(ok ? "PASS" : "FAIL") startup \(scenario) \(command) +\(delay)ms: id=\(player.state.nowPlaying?.id ?? 0) playing=\(player.state.isPlaying)")
+            }
+        }
+        player.stop()
+        Log.info("STARTUP-END \(passed) PASS, \(failed) FAIL")
+    }
+
+    private func ready(_ id: Track.ID) async -> Bool {
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if player.state.nowPlaying?.id == id, player.state.isPlaying, !player.state.isLoading,
+               id != c2.id || ApplicationMusicPlayer.shared.state.playbackStatus == .playing { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return false
     }
 
     /// The driver sends: play/pause, play/pause, next, previous, about 2.5 s apart.
@@ -60,50 +114,6 @@ final class MediaKeyBench {
         let ok = events == expected
         if ok { passed += 1 } else { failed += 1 }
         Log.info("\(ok ? "PASS" : "FAIL") keys (\(label)): play/pause, play/pause, next, previous — saw \(events), expected \(expected)")
-    }
-
-    /// Each key pressed in the first moments of a cloud song, while MusicKit's own Now Playing
-    /// player can still hold the keys. Logs MusicKit's state at 10 Hz so the effect is on record.
-    private func takeoverWindow() async {
-        // Hold the keys back for 3 s, so the commands are sure to reach MusicKit's player.
-        player.nowPlayingReclaimDelays = [3]
-        defer { player.nowPlayingReclaimDelays = [0, 0.5] }
-        for command in ["next", "previous", "toggle"] {
-            player.stop()
-            try? await Task.sleep(for: .seconds(0.5))
-            player.play(queue: [c2.id, c1.id, l1.id], startAt: c2.id)
-            let deadline = Date().addingTimeInterval(20)
-            while !(player.state.nowPlaying?.id == c2.id && !player.state.isLoading
-                    && ApplicationMusicPlayer.shared.state.playbackStatus == .playing), Date() < deadline {
-                try? await Task.sleep(for: .milliseconds(20))
-            }
-            events = []
-            last = (player.state.nowPlaying?.id, player.state.isPlaying)
-            Log.info("KEYS-WINDOW cmd=\(command) pid=\(ProcessInfo.processInfo.processIdentifier)")
-            let t0 = Date()
-            var lastLine = ""
-            while Date().timeIntervalSince(t0) < 4 {
-                let mk = ApplicationMusicPlayer.shared
-                let line = "status=\(mk.state.playbackStatus) time=\(String(format: "%.2f", mk.playbackTime)) entry=\(mk.queue.currentEntry == nil ? "nil" : "set") entries=\(mk.queue.entries.count) coordinator=\(name(player.state.nowPlaying?.id)) playing=\(player.state.isPlaying)"
-                if line != lastLine {
-                    Log.info("KEYS window \(command) +\(String(format: "%.2f", Date().timeIntervalSince(t0))) \(line)")
-                    lastLine = line
-                }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            try? await Task.sleep(for: .seconds(2))
-            Log.info("KEYS window result (\(command) while MusicKit's player held the keys): \(events.isEmpty ? "no change" : "\(events)")")
-            // Measured, not wished for: in this window MusicKit's player pauses at 0.00 for both
-            // Next and Play/Pause (indistinguishable, so OldTunes follows it as a pause) and
-            // restarts the song for Previous. Only the pause is right; the fix is keeping the
-            // window short (nowPlayingReclaimDelays), here forced open for 3 s.
-            let expected: [String]? = command == "toggle" ? ["\(name(c2.id)) paused"] : nil
-            if let expected {
-                let ok = events == expected
-                if ok { passed += 1 } else { failed += 1 }
-                Log.info("\(ok ? "PASS" : "FAIL") keys (\(command) reaching MusicKit's own player) — saw \(events), expected \(expected)")
-            }
-        }
     }
 
     /// OLDTUNES_PLAYBACK_MODE=window: cloud starts of every kind, with millisecond UTC times of
