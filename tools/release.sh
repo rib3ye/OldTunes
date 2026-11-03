@@ -1,13 +1,14 @@
 #!/bin/zsh
 # Builds OldTunes for release and publishes it as a GitHub release: a Release build signed with
 # Developer ID, notarized when a notarytool profile is set up, zipped, and uploaded with notes
-# listing the pull requests merged since the last release.
+# listing the pull requests merged since the last release. Then the Mac that built it gets the
+# same app as /Applications/OldTunes.app (tools/install.sh), or once OldTunes quits if it's open.
 #
 # The Release workflow (.github/workflows/release.yml) runs this on Noah's Mac, through a
 # self-hosted Actions runner, every time main moves on GitHub. It also runs by hand, on that Mac,
 # from the repo root of a clean checkout of the commit to release:
-#     tools/release.sh             # build, notarize, publish
-#     tools/release.sh --dry-run   # the same, except that it publishes nothing
+#     tools/release.sh             # build, notarize, publish, install
+#     tools/release.sh --dry-run   # the same, except that it publishes and installs nothing
 #
 # The version is MARKETING_VERSION in project.yml and the build number is HEAD's commit count, so
 # each commit on main gets its own release, tagged v<version>-<build>. A commit that already has
@@ -166,3 +167,4 @@ if (( dry_run )); then
 fi
 gh release create "$tag" "$zip" --target "$sha" --title "$title" --notes "$notes" --generate-notes --latest
 echo "published $(gh release view "$tag" --json url --jq .url)"
+tools/install.sh "$unpacked/OldTunes.app"

@@ -45,7 +45,23 @@ To make a release by hand, on that Mac, from the repo root of a clean checkout o
 tools/release.sh
 ```
 
-`tools/release.sh --dry-run` does everything except publish.
+`tools/release.sh --dry-run` does everything except publish and install.
+
+After publishing, `tools/release.sh` installs the same app as `/Applications/OldTunes.app` on
+that Mac (`tools/install.sh`), so the OldTunes there is always the newest release. An open
+OldTunes is never replaced: the build waits in
+`~/Library/Application Support/com.noahtsutsui.oldtunes.install`, and a launchd job checks every
+minute and installs it once OldTunes has quit (log:
+`~/Library/Logs/com.noahtsutsui.oldtunes.install.log`). That job ends at logout, so a restart
+drops a waiting build; the next release brings it. To install by hand, on that Mac, from the
+repo root:
+
+```bash
+tools/install.sh
+```
+
+It installs the last build of `tools/release.sh`, or the `OldTunes.app` you name. It skips a
+build that isn't newer than the one in `/Applications` unless you add `--force`.
 
 The runner lives in `~/actions-runner-OldTunes` and starts at login as a LaunchAgent. Its logs
 are in `~/actions-runner-OldTunes/_diag`. To set it up on another Mac, follow repo Settings ▸
