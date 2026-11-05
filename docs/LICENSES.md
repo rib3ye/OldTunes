@@ -1,9 +1,9 @@
 # Third-party licences
 
-OldTunes ships open-source code: GRDB, SFBAudioEngine, and the libraries SFBAudioEngine pulls
+oldTunes ships open-source code: GRDB, SFBAudioEngine, and the libraries SFBAudioEngine pulls
 in. Their licences ask for credit, and most ask for a copy of the licence text with the app. The
-About box (`OldTunes/App/Credits.html`) credits each library and names its licence file. The
-files sit in `OldTunes/App/Licenses/`, which `project.yml` copies whole into the app as
+About box (`oldTunes/App/Credits.html`) credits each library and names its licence file. The
+files sit in `oldTunes/App/Licenses/`, which `project.yml` copies whole into the app as
 `Contents/Resources/Licenses/`. Geiss HDR's licence and NOTICE stay in `Contents/Resources`
 (`docs/VISUALIZER.md`).
 
@@ -11,12 +11,12 @@ files sit in `OldTunes/App/Licenses/`, which `project.yml` copies whole into the
 
 | Library | Version | Where it is in the app | Licence |
 |---|---|---|---|
-| GRDB | 7.11.1 | Built into the OldTunes binary | MIT |
+| GRDB | 7.11.1 | Built into the oldTunes binary | MIT |
 | SFBAudioEngine | 0.14.0 | Built in | MIT |
 | loudness_ebur128 (Google), inside SFBAudioEngine | — | Built in | Apache-2.0 |
 | dsd2pcm (Sebastian Gesemann), inside SFBAudioEngine | — | Built in | BSD-2-Clause-Views |
 | AVFAudioExtensions, CXXAudioRingBuffer, CXXDispatchSemaphore, CXXMessageQueue, CXXQueue, CXXUnfairLock | 0.5.1, 0.2.0, 0.4.1, 0.2.2, 0.1.1, 0.3.1 | Built in | MIT |
-| TagLib (CXXTagLib) | 2.3.2 | Built in | MPL-1.1 (TagLib is LGPL-2.1 or MPL-1.1; OldTunes uses MPL) |
+| TagLib (CXXTagLib) | 2.3.2 | Built in | MPL-1.1 (TagLib is LGPL-2.1 or MPL-1.1; oldTunes uses MPL) |
 | Monkey's Audio SDK (CXXMonkeysAudio, from `Vendor/`) | 12.13, with 13.43's MD5 | Built in | BSD-3-Clause; the MD5 is under RSA's MD5 licence (see "Monkey's Audio's MD5") |
 | DUMB (CDUMB, kode54's fork) | 2.0.3 | Built in | DUMB licence (zlib-style); its LPC code is Xiph BSD plus the Degener/Bormann notice |
 | Speex and SpeexDSP (CSpeex) | 1.2.1 | Built in | BSD-3-Clause |
@@ -34,7 +34,7 @@ files sit in `OldTunes/App/Licenses/`, which `project.yml` copies whole into the
 The upstream version inside each binary framework is in the name of the package's GitHub release
 (for example `sbooth/lame-binary-xcframework` release 0.1.2 is "LAME 3.100"). Those frameworks
 are built from `github.com/sbooth/AudioXCFrameworks`, which holds each library's source, its
-patches and its Xcode project. The folders behind OldTunes's frameworks have not changed since the
+patches and its Xcode project. The folders behind oldTunes's frameworks have not changed since the
 builds, so its commit `03caaf2` (13 Feb 2026) has the exact source.
 
 ## Where each file comes from
@@ -80,10 +80,10 @@ Package paths are inside the package's checkout, which a build puts in
 ## When a package version changes
 
 1. After `xcodegen generate` and a build, `Package.resolved` (in
-   `OldTunes.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/`) lists every package and
+   `oldTunes.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/`) lists every package and
    version.
 2. For each new or changed package, read its licence file in the checkout and copy it over the
-   matching file in `OldTunes/App/Licenses/`. A binary framework's release name says which
+   matching file in `oldTunes/App/Licenses/`. A binary framework's release name says which
    upstream version is inside. Compare a binary package's licence with the one in the source it
    was built from (AudioXCFrameworks): FLAC's and Musepack's package copies didn't match.
 3. Update the versions and copyright lines in `Credits.html`, and the tables here.
@@ -114,7 +114,7 @@ Package paths are inside the package's checkout, which a build puts in
 ## Rules
 
 - Every LGPL library is a separate framework in `Contents/Frameworks`, never built into the
-  OldTunes binary. LGPL code built in would oblige OldTunes to let people relink it.
+  oldTunes binary. LGPL code built in would oblige oldTunes to let people relink it.
 - The About box says where the LGPL libraries' source code is, and where TagLib's is (MPL 1.1
   §3.6 asks for that too).
 
@@ -122,8 +122,8 @@ Package paths are inside the package's checkout, which a build puts in
 
 The Monkey's Audio SDK is BSD-licensed, but `MACLib/MD5.cpp` in CXXMonkeysAudio 12.13.0 carries a
 GPL-2.0-or-later header: it is dietlibc's MD5, by Frank Klemm. SFBAudioEngine's Monkey's Audio
-encoder calls it, and the linker always keeps that encoder, so it was built into OldTunes even
-though OldTunes never encodes. Monkey's Audio replaced the file in 12.74 (April 27, 2026). Until
-CXXMonkeysAudio catches up, OldTunes builds that package from `Vendor/CXXMonkeysAudio`, with SDK
+encoder calls it, and the linker always keeps that encoder, so it was built into oldTunes even
+though oldTunes never encodes. Monkey's Audio replaced the file in 12.74 (April 27, 2026). Until
+CXXMonkeysAudio catches up, oldTunes builds that package from `Vendor/CXXMonkeysAudio`, with SDK
 13.43's MD5 under RSA's MD5 licence (`RSA-MD5.txt`). `Vendor/README.md` has the details and says
 when to remove it. Releases built before that change still contain the GPL code.

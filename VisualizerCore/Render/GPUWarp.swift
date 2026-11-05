@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the GPUWarp class of gpu_warp.js and noise_textures.js
+//  Changed for oldTunes, 2026: the GPUWarp class of gpu_warp.js and noise_textures.js
 //  (Geiss HDR v335), ported from JavaScript and WebGPU to Swift and Metal.
 
 import Accelerate

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the PaletteOverlayPass class of draw_palette.js (Geiss HDR v335),
+//  Changed for oldTunes, 2026: the PaletteOverlayPass class of draw_palette.js (Geiss HDR v335),
 //  ported from JavaScript and WebGPU to Swift and Metal.
 
 import Metal

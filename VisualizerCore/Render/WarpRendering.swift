@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the presenter interface the engine calls in webgpu_present.js
+//  Changed for oldTunes, 2026: the presenter interface the engine calls in webgpu_present.js
 //  (Geiss HDR v335), as a Swift protocol so the engine and the Metal renderer meet in one place.
 
 /// One warp map: motion.js's `src_dxy`, a 512×512 grid of interleaved (dx, dy) offsets. The engine

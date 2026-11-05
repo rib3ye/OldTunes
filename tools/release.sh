@@ -1,8 +1,8 @@
 #!/bin/zsh
-# Builds OldTunes for release and publishes it as a GitHub release: a Release build signed with
+# Builds oldTunes for release and publishes it as a GitHub release: a Release build signed with
 # Developer ID, notarized when a notarytool profile is set up, zipped, and uploaded with notes
 # listing the pull requests merged since the last release. Then the Mac that built it gets the
-# same app as /Applications/OldTunes.app (tools/install.sh), or once OldTunes quits if it's open.
+# same app as /Applications/oldTunes.app (tools/install.sh), or once oldTunes quits if it's open.
 #
 # The Release workflow (.github/workflows/release.yml) runs this on Noah's Mac, through a
 # self-hosted Actions runner, every time main moves on GitHub. It also runs by hand, on that Mac,
@@ -64,8 +64,8 @@ build=$(git rev-list --count HEAD)
 version=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"$/\1/p' project.yml)
 [[ -n "$version" ]] || { echo "$0: no MARKETING_VERSION in project.yml" >&2; exit 1; }
 tag="v$version-$build"
-title="OldTunes $version ($build)"
-zip="$out/OldTunes-$version-$build.zip"
+title="oldTunes $version ($build)"
+zip="$out/oldTunes-$version-$build.zip"
 
 if (( ! dry_run )) && gh release view "$tag" >/dev/null 2>&1; then
   echo "$tag is already released; nothing to do"
@@ -78,12 +78,12 @@ xcodegen generate --quiet
 # Release, signed with Developer ID by hand (not Xcode's automatic Apple Development), with the
 # secure timestamp and no get-task-allow that notarization requires. Archiving strips symbols.
 xcodebuild archive -quiet \
-  -project OldTunes.xcodeproj -scheme OldTunes -configuration Release \
-  -derivedDataPath "$out/dd" -archivePath "$out/OldTunes.xcarchive" \
+  -project oldTunes.xcodeproj -scheme oldTunes -configuration Release \
+  -derivedDataPath "$out/dd" -archivePath "$out/oldTunes.xcarchive" \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$identity" DEVELOPMENT_TEAM="$team" \
   OTHER_CODE_SIGN_FLAGS=--timestamp CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   CURRENT_PROJECT_VERSION="$build"
-app="$out/OldTunes.xcarchive/Products/Applications/OldTunes.app"
+app="$out/oldTunes.xcarchive/Products/Applications/oldTunes.app"
 
 # Check what notarization and Gatekeeper will check: the app and each of SFBAudioEngine's
 # embedded frameworks signed with Developer ID and timestamped, the app with hardened runtime.
@@ -106,21 +106,21 @@ fi
 # (tools/debug-entitlements.sh): the sandbox exceptions, and Music's playback access group.
 if [[ "$entitlements" != *"<key>com.apple.security.app-sandbox</key><true/>"* || "$entitlements" == *temporary-exception* ||
       "$entitlements" == *com.apple.Music.playback* ]]; then
-  echo "$0: the app's entitlements are not the release set in OldTunes/App/OldTunes.entitlements:" >&2
+  echo "$0: the app's entitlements are not the release set in oldTunes/App/oldTunes.entitlements:" >&2
   echo "$entitlements" >&2
   exit 1
 fi
 # No test bench code, which Release builds leave out (project.yml), no private call, and no way to
-# record system audio: OldTunes never asks for System Audio Recording, and only the benches make
+# record system audio: oldTunes never asks for System Audio Recording, and only the benches make
 # process taps. Bench types keep their names in the binary, so a bench file that slipped through
 # shows up here.
-leaked=$(strings -a "$app/Contents/MacOS/OldTunes" | grep -E 'Harness|LiveTest|SmokeTest|responsibility_get_pid|AudioHardwareCreateProcessTap|CATapDescription' | sort -u | head -5 || true)
+leaked=$(strings -a "$app/Contents/MacOS/oldTunes" | grep -E 'Harness|LiveTest|SmokeTest|responsibility_get_pid|AudioHardwareCreateProcessTap|CATapDescription' | sort -u | head -5 || true)
 if [[ -n "$leaked" ]]; then
   echo "$0: the app carries test bench code, a private call or a process tap; project.yml must leave its file out of Release:" >&2
   echo "$leaked" >&2
   exit 1
 fi
-# The list of what macOS moves into the container the first time a sandboxed OldTunes opens. It
+# The list of what macOS moves into the container the first time a sandboxed oldTunes opens. It
 # only ever runs that once, so a release without it would leave people's settings behind.
 migration="$app/Contents/Resources/container-migration.plist"
 [[ -f "$migration" ]] && plutil -lint -s "$migration" ||
@@ -160,7 +160,7 @@ fi
 unpacked="$out/unzipped"
 rm -rf "$unpacked"
 unzip -q "$zip" -d "$unpacked"
-codesign --verify --deep --strict "$unpacked/OldTunes.app" ||
+codesign --verify --deep --strict "$unpacked/oldTunes.app" ||
   { echo "$0: the app in $zip fails its signature check once unzipped" >&2; exit 1; }
 
 if (( dry_run )); then
@@ -169,4 +169,4 @@ if (( dry_run )); then
 fi
 gh release create "$tag" "$zip" --target "$sha" --title "$title" --notes "$notes" --generate-notes --latest
 echo "published $(gh release view "$tag" --json url --jq .url)"
-tools/install.sh "$unpacked/OldTunes.app"
+tools/install.sh "$unpacked/oldTunes.app"

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: engine.js (Geiss HDR v335), ported to Swift: the Engine class,
+//  Changed for oldTunes, 2026: engine.js (Geiss HDR v335), ported to Swift: the Engine class,
 //  the wave parameters, the waveform, beat, fading, chaser and grid dots, and linearResampleF.
 //  The background worker is a detached task. The song-title overlay and the CPU index buffers the
 //  original no longer uses are not ported.

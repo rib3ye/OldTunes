@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the WGSL shaders of gpu_warp.js, dot_renderer.js, webgpu_present.js
+//  Changed for oldTunes, 2026: the WGSL shaders of gpu_warp.js, dot_renderer.js, webgpu_present.js
 //  and draw_palette.js (Geiss HDR v335), translated to the Metal Shading Language.
 
 import Metal
@@ -24,7 +24,7 @@ import Metal
 /// The visualizer's nine shader entry points, as Metal Shading Language source.
 ///
 /// They are compiled when the app runs, the way the original compiles its WGSL strings, so building
-/// OldTunes needs no Metal toolchain. Fast math is off: the warp rounds, wraps and decays 16-bit
+/// oldTunes needs no Metal toolchain. Fast math is off: the warp rounds, wraps and decays 16-bit
 /// values, and should do it the way the WGSL does.
 ///
 /// The translation keeps the original's names, order and arithmetic, so a later Geiss HDR version can

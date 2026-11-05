@@ -1,8 +1,8 @@
 #!/bin/zsh
 # Builds SelfCaptureProbe.app, with ToneService.xpc inside, into /private/tmp/self-capture-probe
 # (main.swift says what it tests). `tools/self-capture-probe/build.sh --sandbox` signs both into
-# the App Sandbox, like OldTunes; that also makes ~/Library/Containers/com.noahtsutsui.selfcaptureprobe.
-# Signed ad hoc, so it has none of OldTunes's permissions. Plays only inaudible tones. Run it with:
+# the App Sandbox, like oldTunes; that also makes ~/Library/Containers/com.noahtsutsui.selfcaptureprobe.
+# Signed ad hoc, so it has none of oldTunes's permissions. Plays only inaudible tones. Run it with:
 #   open -n -W --stdout /private/tmp/self-capture-probe/probe.log --stderr /private/tmp/self-capture-probe/probe.log \
 #     /private/tmp/self-capture-probe/SelfCaptureProbe.app --args --mode app
 # then read the log's SUMMARY. It quits by itself after about 23 s (plus any --hold).

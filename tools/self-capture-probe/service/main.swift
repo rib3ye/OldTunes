@@ -1,7 +1,7 @@
 import Foundation
 
 /// ToneService.xpc: plays a tone when asked. Its own process, hosted by the probe app, like
-/// RemotePlayerService is hosted by OldTunes.
+/// RemotePlayerService is hosted by oldTunes.
 final class Service: NSObject, ToneProtocol, NSXPCListenerDelegate {
     private var tones: [Tone] = []
 

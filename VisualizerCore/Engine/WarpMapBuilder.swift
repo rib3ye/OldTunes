@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: motion.js (Geiss HDR v335), ported to Swift. buildWarpMap's per-mode
+//  Changed for oldTunes, 2026: motion.js (Geiss HDR v335), ported to Swift. buildWarpMap's per-mode
 //  loops are split into WarpModes+Zoom.swift, WarpModes+Swirl.swift and WarpModes+Other.swift, and
 //  fill the map in row bands that can run in parallel.
 

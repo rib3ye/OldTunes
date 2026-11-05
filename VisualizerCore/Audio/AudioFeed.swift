@@ -3,7 +3,7 @@ import Foundation
 /// Turns the tap's sample ring into AudioFrames, one per engine step: reads the 2048 samples that
 /// end at the step's moment, applies the gain, and runs Geiss HDR's getFrame on them.
 ///
-/// The gain undoes OldTunes' own local-file volume, which is applied before the tap hears the sound
+/// The gain undoes oldTunes' own local-file volume, which is applied before the tap hears the sound
 /// (cloud songs' volume is the output device's, applied after it), so the picture doesn't dim with the
 /// volume slider. Not thread-safe: one instance per render loop.
 public final class AudioFeed {

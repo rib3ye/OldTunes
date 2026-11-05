@@ -68,7 +68,7 @@ It does not send cloud writes.
 Build from the repository root:
 
 ```sh
-xcodebuild -project OldTunes.xcodeproj -scheme OldTunes -configuration Bench \
+xcodebuild -project oldTunes.xcodeproj -scheme oldTunes -configuration Bench \
   -derivedDataPath build/reliability -clonedSourcePackagesDirPath build/dd/SourcePackages \
   -disableAutomaticPackageResolution CODE_SIGN_STYLE=Manual \
   'CODE_SIGN_IDENTITY=Developer ID Application: Noah Tsutsui (92N52YB23U)' \
@@ -80,7 +80,7 @@ Run the scratch-index checks:
 ```sh
 open -n -W --stdout /private/tmp/oldtunes-reliability-lists.log \
   --env OLDTUNES_HARNESS=lists --env OLDTUNES_LISTS_MODE=playlists \
-  build/reliability/Build/Products/Bench/OldTunes.app
+  build/reliability/Build/Products/Bench/oldTunes.app
 ```
 
 Run the download check with an uploaded song that has no local file:
@@ -88,7 +88,7 @@ Run the download check with an uploaded song that has no local file:
 ```sh
 open -n -W --stdout /private/tmp/oldtunes-reliability-download.log \
   --env OLDTUNES_HARNESS=musicdownload --env OLDTUNES_DOWNLOAD_PID=6FC98CDFE5FCF3E5 \
-  build/reliability/Build/Products/Bench/OldTunes.app
+  build/reliability/Build/Products/Bench/oldTunes.app
 ```
 
 Run the playlist check with a plain source playlist containing two distinct songs:
@@ -97,7 +97,7 @@ Run the playlist check with a plain source playlist containing two distinct song
 open -n -W --stdout /private/tmp/oldtunes-reliability-playlists.log \
   --env OLDTUNES_HARNESS=musicplaylists --env OLDTUNES_PLAYLIST_SOURCE=AF6A3AC76ED023A6 \
   --env OLDTUNES_PLAYLIST_CHECK_CLOUD=1 \
-  build/reliability/Build/Products/Bench/OldTunes.app
+  build/reliability/Build/Products/Bench/oldTunes.app
 ```
 
 Without the cloud-read flag, the playlist harness checks local persistence only.

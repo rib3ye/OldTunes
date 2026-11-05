@@ -1,4 +1,4 @@
-// Makes OldTunes/Visualizer/Harness/VisualizerFixtures+Analyser.swift: what Geiss HDR's own
+// Makes oldTunes/Visualizer/Harness/VisualizerFixtures+Analyser.swift: what Geiss HDR's own
 // AudioInput.getFrame() returns in Chrome for a synthetic signal the visualizer bench can rebuild
 // exactly. The bench (OLDTUNES_VIS_MODE=audio) checks the Swift AnalyserNode and getFrame port
 // against these numbers.

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the engine part of main.js (Geiss HDR v335), ported to Swift: the
+//  Changed for oldTunes, 2026: the engine part of main.js (Geiss HDR v335), ported to Swift: the
 //  clocks and the frame-rate rule of render() and frame(), the palette blend, the band levels and the
 //  beat detector, and the key commands as an enum. The song list, help screens, toasts' drawing and
 //  palette editing are not ported. Space's "randomize everything" is the R command here. Motion speed
@@ -24,7 +24,7 @@
 
 import Foundation
 
-/// The visualizer's key commands (main.js's keydown handler), as OldTunes maps them. The view turns
+/// The visualizer's key commands (main.js's keydown handler), as oldTunes maps them. The view turns
 /// keys into these; `VisualizerDriver.handle(_:)` carries them out.
 public enum VisualizerCommand: Sendable, Equatable {
     /// p, ⇧P: a new palette; lock or unlock the palette.

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the zooming modes of buildWarpMap in motion.js (Geiss HDR v335),
+//  Changed for oldTunes, 2026: the zooming modes of buildWarpMap in motion.js (Geiss HDR v335),
 //  ported to Swift: 0–2, 11–15, 17–19, 21–25, 27–29 and 31–38.
 
 import Foundation

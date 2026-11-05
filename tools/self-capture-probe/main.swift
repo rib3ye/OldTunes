@@ -7,11 +7,11 @@ import ScreenCaptureKit
 // Screen Recording and no System Audio Recording permission capture the sound of its OWN content
 // (SCShareableContent.currentProcess, macOS 14.4+, "available to capture by current process without
 // user consent via TCC"), and does that sound include a process the app hosts (here ToneService.xpc;
-// for OldTunes, RemotePlayerService)? OldTunes's SelfCapture rests on both.
+// for oldTunes, RemotePlayerService)? oldTunes's SelfCapture rests on both.
 //
 // It plays inaudible tones: 19 kHz from the app itself, 18 kHz from its XPC service, at -60 dBFS,
 // and prints the level of each as captured, then a summary. build.sh says how to build and run it.
-// Options: --mode window|app (what to capture; OldTunes captures the app), --obscure
+// Options: --mode window|app (what to capture; oldTunes captures the app), --obscure
 // minimize|hide|close (done to the window as the service's tone starts), --db -60 (tone level),
 // --hold 20 (seconds to keep capturing after the tones, to look at the menu bar).
 
@@ -264,7 +264,7 @@ final class Probe: NSObject, NSApplicationDelegate, SCStreamOutput, SCStreamDele
             let end = CMTimeAdd(sampleBuffer.presentationTimeStamp, sampleBuffer.duration)
             let now = CMClockGetTime(clock)
             if end.isValid, now.isValid { lag = CMTimeGetSeconds(CMTimeSubtract(now, end)) }
-            // The same lag, on the host clock, the way OldTunes's SelfCapture stamps buffers.
+            // The same lag, on the host clock, the way oldTunes's SelfCapture stamps buffers.
             let host = CMClockConvertHostTimeToSystemUnits(CMSyncConvertTime(sampleBuffer.presentationTimeStamp, from: clock, to: CMClockGetHostTimeClock()))
             let endHost = Double(host) * hostScale + CMTimeGetSeconds(sampleBuffer.duration)
             let hostLag = Double(mach_absolute_time()) * hostScale - endHost

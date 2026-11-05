@@ -11,7 +11,7 @@ copy SFBAudioEngine asks for. Nothing else changes: SFBAudioEngine still comes f
 the rest of Monkey's Audio is 3-clause BSD. The file is Frank Klemm's MD5 from dietlibc (dietlibc's
 changelog for 0.12: "add Frank Klemm's optimized md5"), and it has been in the Monkey's Audio SDK
 since at least 3.99. SFBAudioEngine's Monkey's Audio encoder calls it, and the linker always keeps
-that encoder, so the code ends up in OldTunes even though OldTunes never encodes. Monkey's Audio
+that encoder, so the code ends up in oldTunes even though oldTunes never encodes. Monkey's Audio
 replaced the file itself in 12.74 (April 27, 2026), with a FreeBSD MD5 under RSA's MD5 licence.
 
 **What differs from 12.13.0.**

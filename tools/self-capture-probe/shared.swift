@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 
 /// The XPC service plays a tone on request, so the app can check whether capturing its own content
-/// carries the sound of a process it hosts (as OldTunes hosts RemotePlayerService).
+/// carries the sound of a process it hosts (as oldTunes hosts RemotePlayerService).
 @objc protocol ToneProtocol {
     func play(frequency: Double, dBFS: Double, seconds: Double, reply: @escaping (String) -> Void)
 }

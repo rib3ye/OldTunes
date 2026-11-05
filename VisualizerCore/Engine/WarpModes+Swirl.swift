@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the swirling and rotating modes of buildWarpMap in motion.js
+//  Changed for oldTunes, 2026: the swirling and rotating modes of buildWarpMap in motion.js
 //  (Geiss HDR v335), ported to Swift: 3–8, 16, 20 and 30.
 
 import Foundation

@@ -1,7 +1,7 @@
 # Xcode
 *.xcodeproj/
 # Written by tools/debug-entitlements.sh on every `xcodegen generate`
-OldTunes/App/OldTunes-Debug.entitlements
+oldTunes/App/oldTunes-Debug.entitlements
 build/
 DerivedData/
 *.xcuserstate

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: wave_align.js (Geiss HDR v335), ported to Swift. Out-of-range reads
+//  Changed for oldTunes, 2026: wave_align.js (Geiss HDR v335), ported to Swift. Out-of-range reads
 //  give NaN where the original reads `undefined`.
 
 /// Multiscale waveform alignment. Each frame, it picks the window of the new wave (and of its three

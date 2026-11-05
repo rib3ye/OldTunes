@@ -1,10 +1,10 @@
-// Draws OldTunes' app icon: the iTunes 7–9 icon (September 2006 to September 2010), a silver CD
+// Draws oldTunes' app icon: the iTunes 7–9 icon (September 2006 to September 2010), a silver CD
 // with a rainbow sheen behind a glossy blue double note, set on a dark grey tile. It is drawn from
 // shapes, like the rest of the 2005 chrome, so no Apple artwork is copied into the repo.
 //
 // Run on a Mac, from the repo root:
 //     swift tools/make-app-icon.swift
-// It rewrites OldTunes/App/Assets.xcassets/AppIcon.appiconset. Pass a folder to write there instead.
+// It rewrites oldTunes/App/Assets.xcassets/AppIcon.appiconset. Pass a folder to write there instead.
 
 import CoreGraphics
 import Foundation
@@ -404,7 +404,7 @@ func writePNG(_ image: CGImage, to url: URL) {
 // MARK: - Output
 
 let out = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first
-              ?? "OldTunes/App/Assets.xcassets/AppIcon.appiconset")
+              ?? "oldTunes/App/Assets.xcassets/AppIcon.appiconset")
 try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
 var entries: [String] = []

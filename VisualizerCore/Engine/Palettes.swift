@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: palette.js (Geiss HDR v335), ported to Swift: the palette table,
+//  Changed for oldTunes, 2026: palette.js (Geiss HDR v335), ported to Swift: the palette table,
 //  GenerateRandomPalette, SamplePalette and HdrToSdr. The palette override and editing helpers are
 //  not ported.
 

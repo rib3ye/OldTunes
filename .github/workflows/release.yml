@@ -1,4 +1,4 @@
-# Every push to main (a merged pull request) builds OldTunes on Noah's Mac, publishes it as a
+# Every push to main (a merged pull request) builds oldTunes on Noah's Mac, publishes it as a
 # GitHub release and installs it in that Mac's /Applications. The job runs on a self-hosted runner
 # installed on that Mac, so the build uses its Xcode and its Developer ID certificate.
 # tools/release.sh does the work; docs/DEVELOPMENT.md ▸ Releases says how the runner is set up.

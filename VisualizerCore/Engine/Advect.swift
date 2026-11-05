@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: AdvectPoint in warp.js (Geiss HDR v335), ported to Swift. The rest
+//  Changed for oldTunes, 2026: AdvectPoint in warp.js (Geiss HDR v335), ported to Swift. The rest
 //  of warp.js (the CPU warp) is unused by the original and not ported.
 
 /// `AdvectPoint(sx0, sy0, xform, warps, warp_str, speed_mult, shift_x, shift_y)`: moves a screen point

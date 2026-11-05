@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Writes OldTunes/App/OldTunes-Debug.entitlements, which is not committed: OldTunes.entitlements
+# Writes oldTunes/App/oldTunes-Debug.entitlements, which is not committed: oldTunes.entitlements
 # plus four things only Debug builds get, for the benches (docs/DEVELOPMENT.md ▸ Test benches):
 #   - /private/tmp/, where benches keep their index, fixtures, snapshots and evidence
 #     (OLDTUNES_DB_PATH and the rest). Sandboxed, an app may touch only its own container, and
@@ -9,18 +9,18 @@
 #   - /opt/homebrew/, to read and run, for the metadata bench's MP3 fixture made with lame
 #     (HarnessFixtures): a sandboxed app may otherwise run only the system's own tools.
 #   - Music's playback access group, for the A/B bench (AudioABBench), which plays songs in Music
-#     to compare. OldTunes itself never sends Music a playback command, so a release build can't.
+#     to compare. oldTunes itself never sends Music a playback command, so a release build can't.
 #     Because Debug reaches more of Music than a release build, check Music scripting on a
 #     Bench build too (OLDTUNES_HARNESS=musicaccess, and the live checks): Release's entitlements
 #     with the benches, which Release builds leave out (project.yml).
 # Release builds, which ship and which the Mac App Store would review, sign with
-# OldTunes.entitlements alone. XcodeGen runs this after every `xcodegen generate`
+# oldTunes.entitlements alone. XcodeGen runs this after every `xcodegen generate`
 # (project.yml ▸ options ▸ postGenCommand).
 
 set -euo pipefail
 cd "${0:a:h}/.."
-out=OldTunes/App/OldTunes-Debug.entitlements
-cp OldTunes/App/OldTunes.entitlements "$out"
+out=oldTunes/App/oldTunes-Debug.entitlements
+cp oldTunes/App/oldTunes.entitlements "$out"
 /usr/libexec/PlistBuddy \
   -c 'Add :com.apple.security.temporary-exception.files.absolute-path.read-write array' \
   -c 'Add :com.apple.security.temporary-exception.files.absolute-path.read-write:0 string /private/tmp/' \

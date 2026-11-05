@@ -11,8 +11,8 @@ Chrome, a long listening test, and these notes' results.
 
 | Folder | What | Licence |
 |---|---|---|
-| `VisualizerCore/` | Static library: the ported engine, the Metal renderer, the AnalyserNode emulation, the sample ring | Ported files Apache-2.0 (they carry the Geiss HDR header); the rest is OldTunes's |
-| `OldTunes/Visualizer/` | App side: the Core Audio tap, the silence watchdog, the view, the window, the bench | OldTunes's |
+| `VisualizerCore/` | Static library: the ported engine, the Metal renderer, the AnalyserNode emulation, the sample ring | Ported files Apache-2.0 (they carry the Geiss HDR header); the rest is oldTunes's |
+| `oldTunes/Visualizer/` | App side: the Core Audio tap, the silence watchdog, the view, the window, the bench | oldTunes's |
 
 `VisualizerCore` is its own target because it is built with `-O` in every configuration. The
 engine is numeric Swift: at `-Onone` one warp map would take seconds instead of milliseconds.
@@ -24,7 +24,7 @@ of Xcode's separately downloaded Metal toolchain.
 ## How sound reaches the screen
 
 1. Cloud songs sound from Apple's `com.apple.MediaPlayer.RemotePlayerService`, local files from
-   OldTunes itself. ScreenCaptureKit capturing OldTunes itself reads both, with no permission
+   oldTunes itself. ScreenCaptureKit capturing oldTunes itself reads both, with no permission
    (`SelfCapture`; see "Without the permission" below). The test benches read both with one Core
    Audio process tap instead (`MusicAudioTap`): a stereo mixdown, private, inside a private aggregate
    device clocked by the default output, muted so a bench is silent. A tap needs System Audio
@@ -40,7 +40,7 @@ of Xcode's separately downloaded Metal toolchain.
 The animation is tuned for 120 steps a second. On a 60 Hz screen each frame runs two steps, each
 with its own slice of audio.
 
-A `CAMetalDisplayLink` on the main thread runs all of this (`OldTunes/Visualizer/VisualizerRenderLoop.swift`).
+A `CAMetalDisplayLink` on the main thread runs all of this (`oldTunes/Visualizer/VisualizerRenderLoop.swift`).
 It hands each refresh a free drawable, so the main thread never waits in `nextDrawable()`. One rule
 comes with it: while a link exists on the layer, never set the layer's `maximumDrawableCount`. It
 throws (`CAMetalLayerInvalidOperation`) even when the value doesn't change, and an Objective-C
@@ -60,19 +60,19 @@ screen caps it at its headroom (4× to 16× on a MacBook Pro's XDR screen). It l
 macOS lets an app capture its own content with no permission and no prompt
 (`SCShareableContent.currentProcess`, macOS 14.4). The sound of an app capture is the app's own plus
 that of every process RunningBoard counts as hosted by the app, and RunningBoard counts the
-RemotePlayerService MusicKit starts for OldTunes as hosted by OldTunes (the log names it
+RemotePlayerService MusicKit starts for oldTunes as hosted by oldTunes (the log names it
 `xpcservice<com.apple.MediaPlayer.RemotePlayerService([app<application.com.noahtsutsui.oldtunes…>:pid])>`).
-So `SelfCapture`, a ScreenCaptureKit capture of OldTunes alone, hears iCloud songs as well as files.
+So `SelfCapture`, a ScreenCaptureKit capture of oldTunes alone, hears iCloud songs as well as files.
 replayd, which runs the capture, makes the audio tap itself, on its own entitlements; the app's own
 permissions don't come into it. The probe under "Measured" showed this with a service of its own and
 no permission at all, and the `selfcapture` bench with a real iCloud song.
 
-Which ears the visualizer uses (`VisualizerAudio`), since November 4, 2026, when OldTunes stopped
+Which ears the visualizer uses (`VisualizerAudio`), since November 4, 2026, when oldTunes stopped
 using System Audio Recording (iCloud songs' volume now comes from `CloudVolume`, which listens to
 nothing):
 
 - The app: `SelfCapture`, always. It needs macOS 14.4, so the visualizer does too
-  (`VisualizerController.isSupported`); there is no other way for OldTunes to listen.
+  (`VisualizerController.isSupported`); there is no other way for oldTunes to listen.
 - Benches: the tap (`MusicAudioTap`), because only a tap can mute what it hears. Debug builds can pick
   either outside the benches with `OLDTUNES_VIS_EARS=tap` or `self-capture`. Release builds leave
   `MusicAudioTap.swift` out (project.yml), and `tools/release.sh` refuses a build that could make a
@@ -82,7 +82,7 @@ nothing):
   own and changes nothing. A `SelfCapture` stopped from the menu bar stays stopped until the
   visualizer is turned on again, and a hint says to turn the visualizer off and on.
 
-Until then the visualizer tapped whenever OldTunes was known to have the permission, which its
+Until then the visualizer tapped whenever oldTunes was known to have the permission, which its
 iCloud songs' volume route needed anyway, and fell back between the two kinds of ears.
 
 What it costs: macOS counts the capture as sharing the screen. Control Center lists the stream and
@@ -175,7 +175,7 @@ JavaScript carries on where Swift stops the app, so the port follows these rules
 ## Test bench
 
 ```bash
-open -n --env OLDTUNES_HARNESS=visualizer --env OLDTUNES_VIS_MODE=<mode> build/dd/Build/Products/Debug/OldTunes.app
+open -n --env OLDTUNES_HARNESS=visualizer --env OLDTUNES_VIS_MODE=<mode> build/dd/Build/Products/Debug/oldTunes.app
 ```
 
 Run it on your Mac, from the repo (or worktree) folder the app was built in.
@@ -192,7 +192,7 @@ Run it on your Mac, from the repo (or worktree) folder the app was built in.
 
 Benches tap muted, so they make no sound, unless `OLDTUNES_VIS_AUDIBLE=1`; `selfcapture`'s live
 checks run only then. Before a run:
-`pgrep -lx OldTunes` must print nothing (benches share settings and the log with the real app),
+`pgrep -lx oldTunes` must print nothing (benches share settings and the log with the real app),
 and the build must be signed "Apple Development: Noah Tsutsui" (team 92N52YB23U). Unlock the
 screen first: while the Mac is locked no window is visible, so the visualizer draws nothing and
 full screen never finishes, and `ui`, `cycles` and `render` fail.
@@ -217,7 +217,7 @@ On 2026-10-20, on a MacBook Pro (Apple M2 Max) with its built-in 120 Hz screen, 
 Still to check with Noah (M5): the picture side by side with the original in Chrome, and a long
 listening test. Done by hand on 2026-10-20: the HDR highlights ("it looked great") and the permission note.
 
-`SelfCapture` before it was in OldTunes, on 2026-10-29, macOS 27.0.1, with a probe app and an XPC
+`SelfCapture` before it was in oldTunes, on 2026-10-29, macOS 27.0.1, with a probe app and an XPC
 service of its own (`tools/self-capture-probe`; its `build.sh` says how to run it), sandboxed and
 ad-hoc signed, never granted Screen Recording or System Audio Recording. Each played an inaudible tone
 (19 kHz and 18 kHz, −60 dBFS), the service's starting 10 s after the capture. The Mac was locked.
@@ -233,7 +233,7 @@ ad-hoc signed, never granted Screen Recording or System Audio Recording. Each pl
 | Format | 48 kHz, 2 ch, 32-bit float, non-interleaved, 960 frames a buffer |
 | Delivery | 31–34 ms late on the median and 46–49 ms at worst in each run of about 1,100 buffers (once 66 ms); the stream clock converts to host time to within 2 ms |
 
-Then in OldTunes, the `selfcapture` bench at 6:54 AM PT the same day, on the MacBook Pro (Apple M2
+Then in oldTunes, the `selfcapture` bench at 6:54 AM PT the same day, on the MacBook Pro (Apple M2
 Max), in a Debug build signed with Developer ID (so it shares the installed app's Media & Apple Music
 grant; replayd doesn't consult its System Audio Recording one). 18 PASS, 0 FAIL:
 

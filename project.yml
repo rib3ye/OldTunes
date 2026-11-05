@@ -1,12 +1,12 @@
 # Generate the Xcode project with:  xcodegen generate
 # The .xcodeproj is build output and is gitignored; this file is the source of truth.
-name: OldTunes
+name: oldTunes
 options:
   bundleIdPrefix: com.noahtsutsui
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
-  # Writes OldTunes-Debug.entitlements (not committed): OldTunes.entitlements plus what only Debug
+  # Writes oldTunes-Debug.entitlements (not committed): oldTunes.entitlements plus what only Debug
   # builds get, for the test benches; the script says what and why.
   postGenCommand: tools/debug-entitlements.sh
 # Debug and Bench builds carry the test benches (OLDTUNES_HARNESS, docs/DEVELOPMENT.md ▸ Test
@@ -42,11 +42,11 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     DEAD_CODE_STRIPPING: YES
 targets:
-  OldTunes:
+  oldTunes:
     type: application
     platform: macOS
     sources:
-      - path: OldTunes
+      - path: oldTunes
         excludes:
           - App/Licenses
       # Geiss HDR's licence and NOTICE travel inside the app, as Apache-2.0 §4(a) and (d) ask.
@@ -56,7 +56,7 @@ targets:
         buildPhase: resources
       # Every other library's licence, as one folder: Contents/Resources/Licenses. Credits.html
       # names each file; docs/LICENSES.md says where each came from.
-      - path: OldTunes/App/Licenses
+      - path: oldTunes/App/Licenses
         type: folder
         buildPhase: resources
     dependencies:
@@ -72,34 +72,34 @@ targets:
       - sdk: QuartzCore.framework
       - sdk: Accelerate.framework
     info:
-      path: OldTunes/App/Info.plist
+      path: oldTunes/App/Info.plist
       properties:
-        CFBundleDisplayName: OldTunes
-        CFBundleName: OldTunes
+        CFBundleDisplayName: oldTunes
+        CFBundleName: oldTunes
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.music
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
-        NSAppleMusicUsageDescription: OldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.
-        NSAppleEventsUsageDescription: OldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, to make, rename and delete the playlists you change in OldTunes and add or remove songs in them, and to download iCloud songs to this Mac.
+        NSAppleMusicUsageDescription: oldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.
+        NSAppleEventsUsageDescription: oldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, to make, rename and delete the playlists you change in oldTunes and add or remove songs in them, and to download iCloud songs to this Mac.
         # Only the test benches' process taps ask for System Audio Recording; Release builds leave
         # those out (below), so the app that ships never shows this.
-        NSAudioCaptureUsageDescription: Only OldTunes's own test builds use this, to measure the sound of the songs they play. The OldTunes you download never asks for it.
+        NSAudioCaptureUsageDescription: Only oldTunes's own test builds use this, to measure the sound of the songs they play. The oldTunes you download never asks for it.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noahtsutsui.oldtunes
-        PRODUCT_NAME: OldTunes
-        # The App Sandbox and what OldTunes needs inside it; the file says why for each key.
+        PRODUCT_NAME: oldTunes
+        # The App Sandbox and what oldTunes needs inside it; the file says why for each key.
         # Hand-written rather than an `entitlements:` block, which XcodeGen would set for every
         # configuration, and Debug needs its own.
-        CODE_SIGN_ENTITLEMENTS: OldTunes/App/OldTunes.entitlements
+        CODE_SIGN_ENTITLEMENTS: oldTunes/App/oldTunes.entitlements
       configs:
         # The same entitlements plus the test benches' extras (tools/debug-entitlements.sh). Music
         # scripting must also be checked on a Bench build, which reaches less of Music.
         Debug:
-          CODE_SIGN_ENTITLEMENTS: OldTunes/App/OldTunes-Debug.entitlements
+          CODE_SIGN_ENTITLEMENTS: oldTunes/App/oldTunes-Debug.entitlements
           # Compiles the benches' launch code in (LaunchEnvironment, AppDelegate).
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) BENCHES"
         Bench:

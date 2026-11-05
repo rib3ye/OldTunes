@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the radial ripple and starfish modes of buildWarpMap in motion.js
+//  Changed for oldTunes, 2026: the radial ripple and starfish modes of buildWarpMap in motion.js
 //  (Geiss HDR v335), ported to Swift: 9 and 10.
 
 import Foundation

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the warp-slot scheduling of engine.js (Geiss HDR v335), ported to
+//  Changed for oldTunes, 2026: the warp-slot scheduling of engine.js (Geiss HDR v335), ported to
 //  Swift: ActiveWarpMap2, GetWarpAtTime, GetWarpsAtTime, PickRandomWarpMap,
 //  RandomizeNextWarpMapDurations and GetNextWarpMapGen.
 

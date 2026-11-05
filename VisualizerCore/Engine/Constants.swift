@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: const.js (Geiss HDR v335), ported to Swift.
+//  Changed for oldTunes, 2026: const.js (Geiss HDR v335), ported to Swift.
 
 /// const.js: sizes shared by the engine and the renderer.
 public enum VisualizerConstants {

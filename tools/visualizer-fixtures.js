@@ -1,4 +1,4 @@
-// Makes OldTunes/Visualizer/Harness/VisualizerFixtures+Engine.swift: what the original Geiss HDR
+// Makes oldTunes/Visualizer/Harness/VisualizerFixtures+Engine.swift: what the original Geiss HDR
 // (version 335) JavaScript computes for synthetic inputs. The visualizer's parity bench
 // (OLDTUNES_HARNESS=visualizer OLDTUNES_VIS_MODE=parity) checks the Swift port against these numbers.
 //

@@ -16,7 +16,7 @@
 //  Output permissions (for still images and still image sequences generated
 //    using this software): see VisualizerCore/OUTPUTS.txt
 //
-//  Changed for OldTunes, 2026: the frame AudioInput.getFrame() returns in audio_input.js
+//  Changed for oldTunes, 2026: the frame AudioInput.getFrame() returns in audio_input.js
 //  (Geiss HDR v335), ported to Swift.
 
 import Foundation
