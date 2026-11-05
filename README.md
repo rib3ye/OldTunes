@@ -16,7 +16,7 @@ iCloud and were never downloaded ("iCloud songs" below), plus music files on you
 ## Get oldTunes
 
 1. Download the newest `oldTunes` zip from the
-   [Releases page](https://github.com/rib3ye/OldTunes/releases/latest).
+   [Releases page](https://github.com/rib3ye/oldTunes/releases/latest).
 2. Double-click the zip, then drag **oldTunes** into your Applications folder.
 3. Open oldTunes. The first time, macOS asks if you're sure you want to open an app from the
    internet. Click **Open**.
