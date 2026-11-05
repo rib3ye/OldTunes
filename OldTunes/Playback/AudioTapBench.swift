@@ -11,9 +11,8 @@ import os
 /// about 5 s, and logs RMS, peak and the count of non-zero samples once a second.
 ///
 /// The tap is muted: while it exists, the tapped processes send nothing to the speakers. Reading it
-/// needs the "System Audio Recording Only" permission, and without it the tap hands over zeros and
-/// no error, so the run also logs the permission as SystemAudioProbe finds it, before and after.
-/// On a Mac that was never asked, that first probe makes macOS ask.
+/// needs the "System Audio Recording Only" permission (which only the benches use), and without it
+/// the tap hands over zeros and no error. On a Mac that was never asked, the first tap makes macOS ask.
 @available(macOS 14.2, *)
 @MainActor
 enum AudioTapBench {
@@ -28,9 +27,7 @@ enum AudioTapBench {
             Log.error("TAP: needs one cloud song and one local file")
             return
         }
-        let permissionAtStart = await SystemAudioProbe.run()
-        Log.info("TAP: OldTunes pid=\(me), permission \(permissionAtStart.rawValue); "
-                 + "RemotePlayerService before any MusicKit playback: \(remotes().map(describe))")
+        Log.info("TAP: OldTunes pid=\(me); RemotePlayerService before any MusicKit playback: \(remotes().map(describe))")
 
         // Cloud. Prepared first, so the tap can exist (and mute) before the song makes a sound.
         let player = ApplicationMusicPlayer.shared
@@ -109,7 +106,6 @@ enum AudioTapBench {
         Log.info("TAP RESULT local, the file itself: \(fileLevels(file, from: localFrom, to: localTo))")
         Log.info("TAP RESULT first non-zero sample: cloud \(onset(cloudOnset, since: cloudAt)), local \(onset(localOnset, since: localAt)); "
                  + "\(tap.levels.startInfo); \(tap.setup)")
-        Log.info("TAP RESULT permission: \(permissionAtStart.rawValue) at start, \(await SystemAudioProbe.run().rawValue) at end")
     }
 
     /// Logs one line a second for `seconds` and returns the sum of those windows.

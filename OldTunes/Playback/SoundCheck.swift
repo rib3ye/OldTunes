@@ -12,9 +12,9 @@ import Foundation
 /// 1000 / energy.
 ///
 /// A file gets it through an audio processing tap before AVPlayer's volume (LocalSoundCheck).
-/// An iCloud song plays in Apple's
-/// RemotePlayerService process, which MusicKit gives no volume for and applies no Sound Check in,
-/// so CloudAudioRoute plays it out again with the gain.
+/// An iCloud song plays in Apple's RemotePlayerService process, which applies no Sound Check and
+/// MusicKit gives no volume for, so CloudVolume sets that process's level to OldTunes's volume
+/// times the gain. That level goes no higher than full, so there a boost is capped.
 enum SoundCheck {
     /// The gain for a song as a factor on its samples; 1 when Music has no measurement.
     static func gain(energy: Int) -> Float {

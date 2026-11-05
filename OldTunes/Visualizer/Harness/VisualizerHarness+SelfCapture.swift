@@ -6,8 +6,8 @@ import MusicKit
 import VisualizerCore
 
 /// OLDTUNES_VIS_MODE=selfcapture — the visualizer's ears without System Audio Recording (SelfCapture):
-///   1. which ears VisualizerAudio picks, for every permission answer and deaf combination, and the
-///      silence watchdog's new rules (a baseline from other ears, a ring that starts over),
+///   1. which ears VisualizerAudio picks (the app: always self-capture; benches and muted ears: the
+///      tap), and the silence watchdog's rules for new ears (a baseline, a ring that starts over),
 ///   2. live (macOS 14.4+, OLDTUNES_VIS_AUDIBLE=1 only): SelfCapture builds, hears a local file and
 ///      an iCloud song whose RemotePlayerService starts after the capture does, hears silence when the
 ///      song pauses, delivers within its read delay, and survives 10 start/stop cycles.
@@ -15,8 +15,8 @@ import VisualizerCore
 /// runs only with OLDTUNES_VIS_AUDIBLE=1. The local file plays at a tenth of full volume; the iCloud
 /// song at its own level, as MusicKit has no volume. Cloud plays stay out of the listening history.
 /// replayd makes the capture's tap on its own entitlements, so this build's own System Audio Recording
-/// grant doesn't come into it; the run notes it anyway. tools/self-capture-probe shows the same with
-/// no grant at all.
+/// grant (which only the benches' taps use) doesn't come into it. tools/self-capture-probe shows the
+/// same with no grant at all.
 extension VisualizerHarness {
     static func selfCapture(_ bench: VisualizerBench) async {
         guard #available(macOS 14.4, *) else {
@@ -37,19 +37,16 @@ extension VisualizerHarness {
     @available(macOS 14.4, *)
     private static func sourceDecisions(_ bench: VisualizerBench) {
         typealias Source = VisualizerAudio.Source
-        let cases: [(SystemAudioProbe.Answer?, Set<Source>, Source, String)] = [
-            (.granted, [], .tap, "permission on: the tap"),
-            (.denied, [], .selfCapture, "permission off: self-capture"),
-            (nil, [], .selfCapture, "never asked: self-capture, so the visualizer raises no prompt"),
-            (.untested, [], .selfCapture, "probe couldn't tell: self-capture"),
-            (.granted, [.tap], .selfCapture, "the tap heard nothing: self-capture"),
-            (.granted, [.selfCapture], .tap, "self-capture heard nothing or was stopped, permission on: the tap"),
-            (.denied, [.selfCapture], .selfCapture, "self-capture heard nothing or was stopped, permission off: no tap, it couldn't hear either"),
-            (nil, [.selfCapture], .selfCapture, "self-capture heard nothing or was stopped, never asked: no tap, so no prompt"),
-            (.denied, [.tap, .selfCapture], .tap, "both heard nothing: the tap, whose hint asks for the permission"),
+        let cases: [(Bool, Bool, Source?, Source, String)] = [
+            (false, false, nil, .selfCapture, "the app: self-capture, which needs no permission"),
+            (false, false, .tap, .tap, "OLDTUNES_VIS_EARS=tap in a Debug launch: the tap"),
+            (false, false, .selfCapture, .selfCapture, "OLDTUNES_VIS_EARS=self-capture: self-capture"),
+            (true, false, nil, .tap, "a bench: the tap, which can mute"),
+            (true, false, .selfCapture, .tap, "a bench, whatever OLDTUNES_VIS_EARS says: the tap"),
+            (false, true, nil, .tap, "muted ears: the tap, the only ears that can mute"),
         ]
-        for (permission, deaf, want, label) in cases {
-            let got = VisualizerAudio.choose(permission: permission, deaf: deaf)
+        for (isBench, muted, forced, want, label) in cases {
+            let got = VisualizerAudio.choose(bench: isBench, muted: muted, forced: forced)
             bench.check(label, got == want, "got the \(got.rawValue)")
         }
     }
@@ -70,7 +67,7 @@ extension VisualizerHarness {
             deaf.observe(now: $0, audible: true, airPlay: false, nonZeroFrames: 0)
         }.filter { $0 != .none }
         bench.check("ears that start over deaf still get the rebuild and the hint",
-                    advice == [.rebuild, .showHint(.permission)] && !deaf.hasHeard, "\(advice)")
+                    advice == [.rebuild, .showHint(.cantHear)] && !deaf.hasHeard, "\(advice)")
     }
 
     // MARK: - 2. Live
@@ -91,8 +88,7 @@ extension VisualizerHarness {
             return
         }
         bench.note("live: OldTunes pid \(ProcessInfo.processInfo.processIdentifier); Screen Recording preflight "
-                   + "\(CGPreflightScreenCaptureAccess()); this copy's last System Audio Recording answer "
-                   + "\(SystemAudioProbe.lastAnswer?.rawValue ?? "none"); plays out loud")
+                   + "\(CGPreflightScreenCaptureAccess()); plays out loud")
 
         // The app normally has its window open when the visualizer turns on, and a capture started
         // with none on screen is untested (docs/VISUALIZER.md ▸ Measured), so the bench opens one.

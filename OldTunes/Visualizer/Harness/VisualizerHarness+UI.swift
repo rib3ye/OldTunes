@@ -88,9 +88,9 @@ extension VisualizerHarness {
                     "on \(visualizer.isOn), list hidden \(app.tracks.view.isHidden), lit \(bar.visualizerButton.isLit), "
                     + "focus \(type(of: window.firstResponder as Any))")
         await Probe.pause(1.5)
-        if #available(macOS 14.2, *), let audio = visualizer.audio as? VisualizerAudio {
-            bench.check("its tap runs, ours and muted", audio.tap.status.isRunning && audio.tap.muted == !audible,
-                        audio.tap.status.failure ?? "\(audio.tap.status.tapped)")
+        if #available(macOS 14.4, *), let audio = visualizer.audio as? VisualizerAudio {
+            bench.check("its tap runs, ours and muted", audio.tap?.status.isRunning == true && audio.tap?.muted == !audible,
+                        audio.tap.map { $0.status.failure ?? "\($0.status.tapped)" } ?? "no tap: \(audio.source.rawValue)")
         }
         click(bar.visualizerButton, in: window)
         bench.check("the button swaps it back", !visualizer.isOn && !app.tracks.view.isHidden && !bar.visualizerButton.isLit
@@ -170,8 +170,8 @@ extension VisualizerHarness {
                         && VisualizerView.keyListText.hasPrefix("Visualizer — based on Geiss HDR by Ryan Geiss"), "")
             app.toggleVisualizerKeys(nil)
             bench.check("Show Visualizer Keys hides it again", !view.isShowingKeyList, "")
-            view.showHint(.permission)
-            bench.check("the permission hint shows", view.hint == .permission, "")
+            view.showHint(.cantHear)
+            bench.check("the can't-hear hint shows", view.hint == .cantHear, "")
             view.showHint(nil)
             bench.check("and clears", view.hint == nil, "")
         }

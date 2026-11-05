@@ -182,15 +182,15 @@ extension VisualizerHarness {
         let ticks = stride(from: 0.0, through: 8.0, by: 0.5)
         let deaf = ticks.map { (t: $0, audible: true, nonZero: UInt64(0)) }
         let first = run(deaf)
-        bench.check("zeros while playing: one rebuild at 3 s, then the permission hint at 6 s",
-                    first.advice.map(\.1) == [.rebuild, .showHint(.permission)] && first.advice.map(\.0) == [3.0, 6.0],
+        bench.check("zeros while playing: one rebuild at 3 s, then the can't-hear hint at 6 s",
+                    first.advice.map(\.1) == [.rebuild, .showHint(.cantHear)] && first.advice.map(\.0) == [3.0, 6.0],
                     "\(first.advice)")
 
         let heard = run([(t: 8.5, audible: true, nonZero: 10)], from: first.end)
         bench.check("the first non-zero sample clears the hint", heard.advice.map(\.1) == [.clearHint], "\(heard.advice)")
 
         let again = run(stride(from: 9.0, through: 16.0, by: 0.5).map { (t: $0, audible: true, nonZero: UInt64(10)) }, from: heard.end)
-        bench.check("a second silence within 30 s skips the rebuild", again.advice.map(\.1) == [.showHint(.permission)],
+        bench.check("a second silence within 30 s skips the rebuild", again.advice.map(\.1) == [.showHint(.cantHear)],
                     "\(again.advice)")
 
         let paused = run(ticks.map { (t: $0, audible: false, nonZero: UInt64(0)) })
@@ -206,7 +206,7 @@ extension VisualizerHarness {
         // The permission may come back while the hint shows, and the old tap may stay deaf.
         let later = stride(from: 8.5, through: 70.0, by: 0.5).map { (t: $0, audible: true, nonZero: UInt64(0)) }
         let retries = run(later, from: first.end)
-        bench.check("while the permission hint shows, a new tap every 30 s",
+        bench.check("while the can't-hear hint shows, new ears every 30 s",
                     retries.advice.map(\.1) == [.rebuild, .rebuild] && retries.advice.map(\.0) == [33.0, 63.0],
                     "\(retries.advice)")
         let airPlayLater = run(later, airPlay: true, from: airPlay.end)
@@ -299,8 +299,8 @@ extension VisualizerHarness {
         reasons.removeAll()
         watchdog.start()
         try? await Task.sleep(for: .milliseconds(7_500))
-        bench.check("watchdog rebuilds a silent tap once, then shows the permission hint",
-                    reasons == ["silent while playing"] && hints == [.permission],
+        bench.check("watchdog rebuilds a silent tap once, then shows the can't-hear hint",
+                    reasons == ["silent while playing"] && hints == [.cantHear],
                     "rebuilds \(reasons), hints \(hints)")
         local.play()
         await waitUntil(3) { hints.count >= 2 }

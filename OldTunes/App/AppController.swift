@@ -65,12 +65,14 @@ final class AppController: NSObject {
         self.rebuiltIndex = rebuiltIndex
         ingest = LibraryIngest(index: index)
         player = PlaybackCoordinator(library: index, cloud: ingest)
-        // Debug and Bench builds: play as if System Audio Recording were off, without changing it in
-        // System Settings. iCloud songs then play at their own level, and the visualizer listens
-        // through SelfCapture (docs/VISUALIZER.md ▸ Without the permission).
-        if LaunchEnvironment.value("OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO") == "1" {
-            player.cloud.simulatesMissingPermission = true
+        // Debug and Bench builds: play as if macOS had no call to set iCloud songs' level with
+        // (CloudVolume). They then play at their own level, and the slider greys out during them.
+        if LaunchEnvironment.value("OLDTUNES_SIMULATE_NO_CLOUD_VOLUME") == "1" {
+            player.cloud.simulatesMissingVolumeCall = true
         }
+        // What OldTunes's old System Audio Recording check found, kept by releases up to November
+        // 2026. Nothing asks for that permission any more, so nothing reads it.
+        UserDefaults.standard.removeObject(forKey: "OldTunes.systemAudioRecording")
         sources = SourceListViewController(library: index)
         tracks = TrackListViewController(library: index)
         super.init()

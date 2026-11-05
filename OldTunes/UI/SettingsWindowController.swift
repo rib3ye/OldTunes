@@ -28,7 +28,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let radios: [(mode: AppearanceMode, button: AquaRadioButton)]
     /// Music's own words, from its Settings ▸ Playback.
     let soundCheckBox = AquaCheckbox(title: "Sound Check", font: AquaStyle.controlFont)
-    /// Visualizer ▸ HDR. Only on macOS 14.2 and later, where the visualizer exists.
+    /// Visualizer ▸ HDR. Only on macOS 14.4 and later, where the visualizer exists.
     let hdrCheckbox = AquaCheckbox(title: "Use HDR when the screen supports it", font: AquaStyle.controlFont)
     let okButton = AquaButton(title: "OK", isDefault: true)
     let cancelButton = AquaButton(title: "Cancel")

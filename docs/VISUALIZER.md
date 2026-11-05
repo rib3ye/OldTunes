@@ -24,10 +24,11 @@ of Xcode's separately downloaded Metal toolchain.
 ## How sound reaches the screen
 
 1. Cloud songs sound from Apple's `com.apple.MediaPlayer.RemotePlayerService`, local files from
-   OldTunes itself. When OldTunes has System Audio Recording, one Core Audio process tap reads both
-   (`MusicAudioTap`): a stereo mixdown, unmuted and private, inside a private aggregate device
-   clocked by the default output. When it isn't known to, ScreenCaptureKit capturing OldTunes itself
-   reads both, with no permission (`SelfCapture`; see "Without the permission" below).
+   OldTunes itself. ScreenCaptureKit capturing OldTunes itself reads both, with no permission
+   (`SelfCapture`; see "Without the permission" below). The test benches read both with one Core
+   Audio process tap instead (`MusicAudioTap`): a stereo mixdown, private, inside a private aggregate
+   device clocked by the default output, muted so a bench is silent. A tap needs System Audio
+   Recording, which only the benches use; the build that ships leaves `MusicAudioTap` out.
 2. Each buffer is mixed to mono, ½(L+R), into `SampleRing`, four seconds long.
 3. Once per engine step, the AnalyserNode emulation reads the 2048 samples that end at that step's
    time and makes an `AudioFrame`: the same numbers Chrome's AnalyserNode (fftSize 2048, smoothing
@@ -66,25 +67,23 @@ replayd, which runs the capture, makes the audio tap itself, on its own entitlem
 permissions don't come into it. The probe under "Measured" showed this with a service of its own and
 no permission at all, and the `selfcapture` bench with a real iCloud song.
 
-Which ears the visualizer uses (`VisualizerAudio`):
+Which ears the visualizer uses (`VisualizerAudio`), since November 4, 2026, when OldTunes stopped
+using System Audio Recording (iCloud songs' volume now comes from `CloudVolume`, which listens to
+nothing):
 
-- The tap when OldTunes is known to have System Audio Recording: the cloud route is playing a song
-  out (which proves it), this launch's probe heard its tone at the first iCloud song, or, before then,
-  the last launch's probe did (`SystemAudioProbe.lastAnswer`, kept per signing certificate, as macOS
-  keeps the permission).
-  Benches always use the tap: only it can mute, and the tap benches check it. On macOS 14.2 and 14.3
-  it is always the tap, as before.
-- `SelfCapture` otherwise, on macOS 14.4 and later. There the visualizer raises the permission
-  prompt only if the last launch's answer is out of date (a tap is made only with the permission
-  known granted); otherwise only the first iCloud song does, for the volume and Sound Check.
-- Ears that have heard nothing since they started, while a song played long enough for the watchdog's
-  permission hint, give way to the other kind if that can hear (a tap only with the permission). A
-  silence after sound is the music's own and changes nothing, as before. When no other ears can take
-  over, the permission hint shows, as before: the permission is what makes a tap possible (after
-  reopening OldTunes, at its first iCloud song). A `SelfCapture` stopped from the menu bar stays
-  stopped until the visualizer is turned on again; if no tap can take over, a hint says to turn the
-  visualizer off and on. Each new song gives deaf ears a fresh chance. A last launch's "granted" is
-  forgotten once the tap has heard nothing in two songs.
+- The app: `SelfCapture`, always. It needs macOS 14.4, so the visualizer does too
+  (`VisualizerController.isSupported`); there is no other way for OldTunes to listen.
+- Benches: the tap (`MusicAudioTap`), because only a tap can mute what it hears. Debug builds can pick
+  either outside the benches with `OLDTUNES_VIS_EARS=tap` or `self-capture`. Release builds leave
+  `MusicAudioTap.swift` out (project.yml), and `tools/release.sh` refuses a build that could make a
+  process tap.
+- Ears that hear only zeros while a song plays are rebuilt once; if they stay deaf, the can't-hear
+  hint shows and they are rebuilt every 30 s while it does. A silence after sound is the music's
+  own and changes nothing. A `SelfCapture` stopped from the menu bar stays stopped until the
+  visualizer is turned on again, and a hint says to turn the visualizer off and on.
+
+Until then the visualizer tapped whenever OldTunes was known to have the permission, which its
+iCloud songs' volume route needed anyway, and fell back between the two kinds of ears.
 
 What it costs: macOS counts the capture as sharing the screen. Control Center lists the stream and
 Notification Center logs "Display sharing state changed to: true", so the menu bar's screen-sharing
@@ -95,11 +94,8 @@ so the renderer reads 50 ms behind the present while `SelfCapture` is in use
 (`VisualizerEars.readDelay`). Now and then, after a buffer about 38 ms late or more, two steps read
 the same window.
 
-To try it on a Mac that has the permission, launch a Debug build with
-`OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO=1`: OldTunes then plays as if the permission were off from the
-start (no route, iCloud songs at their own level), and the visualizer picks `SelfCapture`.
-`OLDTUNES_VIS_EARS=tap` or `self-capture` forces one kind whatever the permission; forcing
-`self-capture` while the route plays a song out makes it hear that song twice, so use the first.
+A Debug launch with `OLDTUNES_VIS_EARS=tap` listens through the tap instead, which asks for System
+Audio Recording the first time.
 
 How this was found (October 29, 2026): six approaches were researched, each with a skeptic. Music's
 `download` command plus decoding the file (about 99% of the library would download unprotected, but

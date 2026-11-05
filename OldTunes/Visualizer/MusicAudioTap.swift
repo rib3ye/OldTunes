@@ -3,65 +3,21 @@ import CoreAudio
 import Foundation
 import VisualizerCore
 
-/// What the tap is doing, for the log, the silence watchdog and the bench.
-struct TapStatus: Sendable, Equatable {
-    var isRunning = false
-    /// The processes the tap listens to: our own, plus our RemotePlayerService once MusicKit starts it
-    /// (AudioHAL.ourRemotePlayers).
-    var tapped: [AudioHAL.Process] = []
-    var outputDevice = ""
-    var outputIsAirPlay = false
-    var format = ""
-    var buildMilliseconds = 0.0
-    var failure: String?
-    /// What the HAL showed when the tap was built, for the log: how many audio processes it listed,
-    /// which of the tapped processes and Apple's players were running output, and each
-    /// RemotePlayerService left out because it was running before OldTunes started.
-    var seen = ""
-
-    var remotePlayerTapped: Bool { tapped.contains { $0.bundleID == AudioHAL.remotePlayerBundleID } }
-}
-
-/// What the visualizer hears the music with. VisualizerAudio picks one: MusicAudioTap, a process tap
-/// that needs System Audio Recording, or SelfCapture, ScreenCaptureKit on OldTunes itself, which
-/// needs no permission. Both write the same SampleRing.
-@MainActor
-protocol VisualizerEars: AnyObject {
-    var ring: SampleRing { get }
-    var status: TapStatus { get }
-    /// How far behind the present the render loop reads the ring: about how late the newest sound
-    /// arrives, so each step finds new sound rather than the last delivery again.
-    var readDelay: TimeInterval { get }
-    func start() async
-    func stop()
-    func rebuild(reason: String) async
-}
-
 @available(macOS 14.2, *)
 extension MusicAudioTap: VisualizerEars {
     /// The IOProc writes each buffer within a few milliseconds of its time stamp.
     var readDelay: TimeInterval { 0 }
 }
 
-@available(macOS 14.4, *)
-extension SelfCapture: VisualizerEars {
-    /// Sound arrives in 20 ms buffers, 31–34 ms after it played on the median and 46–49 ms at worst
-    /// in a run (SelfCapture). Past about 30 ms late, the newest sound is older than 50 ms for a few
-    /// milliseconds before the next buffer lands, so now and then (buffers about 38 ms late or more)
-    /// two steps read the same window. Reading further back would make the picture trail the sound
-    /// by more, which is worse.
-    var readDelay: TimeInterval { 0.05 }
-}
-
-/// The visualizer's ears: one Core Audio process tap on OldTunes itself (local files) and on the
-/// RemotePlayerService that renders this OldTunes's cloud songs, inside a private aggregate device
-/// clocked by the default output. The IOProc mixes to mono into a SampleRing. While CloudAudioRoute
-/// plays cloud songs out from OldTunes itself, it taps OldTunes alone (`leavesOutRemotePlayer`).
+/// The test benches' ears for the visualizer: one Core Audio process tap on OldTunes itself (local
+/// files) and on the RemotePlayerService that renders this OldTunes's cloud songs, inside a private
+/// aggregate device clocked by the default output. The IOProc mixes to mono into a SampleRing.
 ///
-/// Unmuted, so the music still plays; benches can mute it. Exists only while the visualizer is on.
-/// The first tap ever built asks for "System Audio Recording Only", and on macOS 27 that call waits
-/// for the answer, so it runs off the main thread. A denied permission gives zeros and no error; the
-/// TapWatchdog notices that.
+/// Benches only (VisualizerAudio): a tap needs System Audio Recording, which the app never asks for,
+/// and the build that ships leaves this file out (project.yml). Benches use it because only a tap can
+/// mute what it hears. Exists only while the visualizer is on. The first tap ever built asks for
+/// "System Audio Recording Only", and on macOS 27 that call waits for the answer, so it runs off the
+/// main thread. A denied permission gives zeros and no error; the TapWatchdog notices that.
 ///
 /// Rebuilds itself when the HAL's process list changes (RemotePlayerService appears, or comes back with
 /// a new pid), when the default output device changes, when the aggregate dies, and after sleep.
@@ -73,10 +29,6 @@ final class MusicAudioTap {
     private(set) var status = TapStatus()
     /// Called after every build or teardown, with the reason.
     var onStatusChange: ((TapStatus, String) -> Void)?
-    /// While CloudAudioRoute plays cloud songs out from OldTunes itself, OldTunes's own output already
-    /// carries them, after the volume slider, and RemotePlayerService's is the same song a second time,
-    /// 25 ms earlier: leave it out then. VisualizerAudio keeps this in step with the route and rebuilds.
-    var leavesOutRemotePlayer = false
 
     private var tapID = AudioHAL.unknown
     private var aggregateID = AudioHAL.unknown
@@ -133,17 +85,12 @@ final class MusicAudioTap {
     // MARK: - Building
 
     /// The processes to tap: ourselves, plus every RemotePlayerService that plays for this OldTunes
-    /// (AudioHAL.ourRemotePlayers) unless `includingRemotePlayer` is false. `seen` describes the rest
-    /// for the log (see `TapStatus.seen`).
-    nonisolated static func targets(includingRemotePlayer: Bool = true) -> (processes: [AudioHAL.Process], seen: String) {
+    /// (AudioHAL.ourRemotePlayers). `seen` describes the rest for the log (see `TapStatus.seen`).
+    nonisolated static func targets() -> (processes: [AudioHAL.Process], seen: String) {
         let me = ProcessInfo.processInfo.processIdentifier
         let listed = AudioHAL.processes()
         var chosen: [AudioHAL.Process] = []
         if let own = AudioHAL.processObject(pid: me) { chosen.append(AudioHAL.process(own)) }
-        guard includingRemotePlayer else {
-            return (chosen, "\(listed.count) audio processes listed; "
-                    + "RemotePlayerService left out: OldTunes plays its cloud songs out itself (CloudAudioRoute)")
-        }
         let remotes = listed.filter { $0.bundleID == AudioHAL.remotePlayerBundleID }
         let ours = AudioHAL.ourRemotePlayers(remotes)
         let playing = (chosen + remotes).filter(\.isRunningOutput).map(\.description)
@@ -161,7 +108,7 @@ final class MusicAudioTap {
         building = gen
         defer { if building == gen { building = nil } }
         let began = HostClock.now
-        let targets = Self.targets(includingRemotePlayer: !leavesOutRemotePlayer)
+        let targets = Self.targets()
         guard !targets.processes.isEmpty else {
             fail("no audio process to tap (OldTunes is not in the HAL's process list)", reason: reason)
             return
@@ -365,7 +312,7 @@ final class MusicAudioTap {
         switch selector {
         case kAudioHardwarePropertyProcessObjectList:
             // Rebuild only if the set we should tap has changed (another app starting doesn't count).
-            let now = Set(Self.targets(includingRemotePlayer: !leavesOutRemotePlayer).processes.map(\.object))
+            let now = Set(Self.targets().processes.map(\.object))
             if now != Set(status.tapped.map(\.object)) { scheduleRebuild("audio processes changed", after: .milliseconds(250)) }
         case kAudioHardwarePropertyDefaultOutputDevice:
             scheduleRebuild("default output device changed", after: .milliseconds(250))

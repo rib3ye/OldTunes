@@ -92,10 +92,12 @@ else on your Mac. What that means:
 
 ## Limits that come from Apple's frameworks
 
-- **Cloud songs come out 25 ms late.** Apple's MusicKit has no volume control on macOS, so
-  OldTunes takes each cloud song's sound from Apple's player process and plays it out itself at
-  the right level. Without the System Audio Recording permission it can't: cloud songs then play
-  at their own level, and the volume slider is greyed out while one plays.
+- **Cloud songs' volume comes from a private call.** Apple's MusicKit has no volume control on
+  macOS, and cloud songs play in Apple's player process, so `CloudVolume` sets that process's level
+  with MusicKit's private `setRelativeVolume:` (docs/RESEARCH.md row 5). It goes no higher than
+  full, so Sound Check can turn a cloud song down but not up. If Apple removes the call, cloud songs
+  play at their own level and the volume slider is greyed out while one plays. OldTunes uses no
+  System Audio Recording.
 - **Catalog fallback** (playing a song by its Apple Music catalog id when the library copy
   can't be found) needs the MusicKit App Service enabled for `com.noahtsutsui.oldtunes` at
   developer.apple.com ▸ Identifiers. Library playback works without it.
@@ -128,9 +130,10 @@ Launch with `open -n --env OLDTUNES_HARNESS=<name> …/OldTunes.app` where
 naming songs and playlists Music answers inside the sandbox; read-only, changes nothing).
 `OLDTUNES_SNAPSHOT=/path.png` renders the window to a PNG; `OLDTUNES_DB_PATH` points the
 index somewhere else. Test benches run in Light; `OLDTUNES_APPEARANCE=dark` runs one in the
-dark without changing the saved setting. `OLDTUNES_SIMULATE_NO_SYSTEM_AUDIO=1` runs the app as if
-System Audio Recording were off, and `OLDTUNES_VIS_EARS=tap` or `self-capture` picks how the
-visualizer hears in a normal Debug launch; benches always tap (`docs/VISUALIZER.md` ▸ Without the
+dark without changing the saved setting. `OLDTUNES_SIMULATE_NO_CLOUD_VOLUME=1` runs the app as
+if macOS had no call to set iCloud songs' level with, and `OLDTUNES_VIS_EARS=tap` or
+`self-capture` picks how the visualizer hears in a normal Debug launch; benches always tap
+(`docs/VISUALIZER.md` ▸ Without the
 permission).
 
 Only Debug and Bench builds have the benches and read these variables. Release builds, the
@@ -184,6 +187,22 @@ an invented library in scratch indexes, never Music.
 It measures amplification, attenuation, the volume slider, mute, pause, seek, and the gain of a preloaded song.
 It changes no library data or saved settings. System Audio Recording permission is necessary for this measurement.
 Normal local-file Sound Check needs no recording permission.
+
+`OLDTUNES_PLAYBACK_SILENT=1` keeps the playback bench's own songs from being heard: a muted tap on
+OldTunes and its RemotePlayerService lasts the whole run, so the main bench (109 checks, about two
+minutes) can run while someone is nearby. It needs System Audio Recording, like every bench tap.
+
+`OLDTUNES_PLAYBACK_MODE=relvol` measures what `CloudVolume` does to iCloud songs, through a muted
+tap on RemotePlayerService: the private call at several levels, through a pause and into the next
+song, then OldTunes's volume and Sound Check through `CloudTransport` on a song Sound Check turns
+down and one it would turn up. It plays four iCloud songs silently for about two minutes, kept out
+of listening history, and changes no saved settings. Like the other taps it needs System Audio
+Recording, which only the benches use. On your Mac, from the repository root (or the worktree you
+built in), with OldTunes quit, after a Debug build with the installed app's Developer ID signature:
+
+```bash
+run_dir=$(mktemp -d /private/tmp/scratchpad-relvol.XXXXXX) && mkdir -p "$run_dir/scratchpad" && open -n -W --stdout "$run_dir/relvol.log" --stderr "$run_dir/relvol.err" --env OLDTUNES_HARNESS=playback --env OLDTUNES_PLAYBACK_MODE=relvol --env OLDTUNES_DB_PATH="$run_dir/scratchpad/index.sqlite" build/dd/Build/Products/Debug/OldTunes.app && grep RELVOL "$run_dir/relvol.log"
+```
 
 `OLDTUNES_PLAYBACK_MODE=startup` checks media commands during cloud starts, resumes, and transitions from local and cloud songs.
 The reclaim timer stays disabled. An external driver sends commands only when macOS identifies the bench process as the current player.

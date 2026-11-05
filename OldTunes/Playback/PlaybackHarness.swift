@@ -2,6 +2,7 @@ import AppKit
 import iTunesLibrary
 import MediaPlayer
 import MusicKit
+import VisualizerCore
 
 /// OLDTUNES_HARNESS=playback — test bench for the playback coordinator and transports.
 ///
@@ -12,10 +13,13 @@ import MusicKit
 /// ReviewFixBench, which the default mode also runs after the main bench; =tap runs AudioTapBench,
 /// which reads a cloud and a local song through a Core Audio process tap (asks for System Audio
 /// Recording the first time); =ab runs AudioABBench, which records one song from OldTunes and from
-/// Music for a side-by-side comparison; =route runs CloudRouteBench, which checks what Sound Check's
-/// route does with iCloud songs; =permission runs PermissionBench, which checks SystemAudioProbe and
-/// a cheaper permission check against this Mac's real System Audio Recording setting.
+/// Music for a side-by-side comparison; =relvol runs RelativeVolumeBench, which checks that MusicKit's
+/// private setRelativeVolume: sets the level of iCloud songs, and that OldTunes's volume and Sound
+/// Check reach it (CloudVolume).
 /// Cloud plays are kept out of the Music library's play history (affectsListeningHistory).
+/// OLDTUNES_PLAYBACK_SILENT=1 keeps the modes below that play the harness library from being heard:
+/// a muted tap on OldTunes and its RemotePlayerService lasts the whole run (it needs System Audio
+/// Recording, as every bench tap does).
 @MainActor
 enum PlaybackHarness {
     static func run() async {
@@ -27,14 +31,10 @@ enum PlaybackHarness {
             NSApp.terminate(nil)
             return
         }
-        if mode == "ab" || mode == "route" || mode == "permission" {
-            // Each plays songs from an index of its own, not the harness library, or none.
+        if mode == "ab" || mode == "relvol" {
+            // Each plays songs from an index of its own, not the harness library.
             if #available(macOS 14.2, *) {
-                switch mode {
-                case "ab": await AudioABBench.run()
-                case "route": await CloudRouteBench.run()
-                default: await PermissionBench.run()
-                }
+                if mode == "ab" { await AudioABBench.run() } else { await RelativeVolumeBench.run() }
             } else {
                 Log.error("\(mode): process taps need macOS 14.2")
             }
@@ -42,6 +42,7 @@ enum PlaybackHarness {
             NSApp.terminate(nil)
             return
         }
+        let silencer = await silence()
         do {
             let loaded = try await PlaybackHarnessLibrary.load(cloudLimit: 30)
             Log.info("playback harness: locals=\(loaded.locals.count) clouds=\(loaded.clouds.count)")
@@ -88,8 +89,20 @@ enum PlaybackHarness {
         } catch {
             Log.error("playback harness: load failed: \(error)")
         }
+        if #available(macOS 14.2, *) { (silencer as? MusicAudioTap)?.stop() }
         Log.flush()
         NSApp.terminate(nil)
+    }
+
+    /// OLDTUNES_PLAYBACK_SILENT=1: MusicAudioTap, muted, which takes in our RemotePlayerService
+    /// as soon as MusicKit starts it. A MusicAudioTap, or nil when the run plays out loud.
+    private static func silence() async -> AnyObject? {
+        guard #available(macOS 14.2, *), LaunchEnvironment.value("OLDTUNES_PLAYBACK_SILENT") == "1" else { return nil }
+        let tap = MusicAudioTap(ring: SampleRing(), muted: true)
+        await tap.start()
+        Log.info("playback harness: silent: " + (tap.status.isRunning ? "a muted tap on \(tap.status.tapped)"
+                                                                       : "the tap failed (\(tap.status.failure ?? "no reason")), so the run is heard"))
+        return tap
     }
 }
 
@@ -331,11 +344,10 @@ private final class Bench {
         check("cloud transport is the one playing", player.cloud.isPlaying && !player.local.isPlaying)
         Log.info("audio output processes during cloud playback: \(AudioProcessProbe.processesRunningOutput())")
         nowPlayingCheck(c1)
-        check("state.volume shows OldTunes's own volume when a cloud song starts, "
-              + (player.cloud.ownsVolume ? "enabled (CloudAudioRoute sets its level)" : "greyed out (System Audio Recording is off)"),
-              abs(player.state.volume - player.appVolume) < 0.001 && player.state.isVolumeEnabled == player.cloud.ownsVolume,
+        check("state.volume shows OldTunes's own volume when a cloud song starts, enabled (CloudVolume sets its level)",
+              abs(player.state.volume - player.appVolume) < 0.001 && player.state.isVolumeEnabled && player.cloud.ownsVolume,
               "state \(f(Double(player.state.volume))) OldTunes \(f(Double(player.appVolume))), "
-              + "\(player.state.isVolumeEnabled ? "enabled" : "greyed out"), probe \(player.cloud.permission?.rawValue ?? "nothing yet")")
+              + "\(player.state.isVolumeEnabled ? "enabled" : "greyed out"), level \(f(Double(player.cloud.level)))")
 
         player.seek(to: 60)
         try? await Task.sleep(for: .seconds(1.5))
@@ -622,8 +634,8 @@ private final class Bench {
     }
 
     /// Files and cloud songs share OldTunes's own volume; nothing in OldTunes moves the Mac's. An
-    /// iCloud song OldTunes can't set the level of (no System Audio Recording, simulated here) greys
-    /// the slider out.
+    /// iCloud song OldTunes can't set the level of (no setRelativeVolume:, simulated here) greys the
+    /// slider out. RelativeVolumeBench measures what the level does to the sound.
     func volume() async {
         Log.info("=== volume ===")
         player.play(queue: [l1.id], startAt: l1.id)
@@ -640,23 +652,22 @@ private final class Bench {
             return
         }
         player.setVolume(0.4)
-        let gain = player.cloud.route?.gain ?? -1
-        check("cloud setVolume sets OldTunes's own volume and the route's gain, slider enabled",
-              abs(player.cloud.volume - 0.4) < 0.001 && abs(gain - 0.4) < 0.001 && player.state.isVolumeEnabled,
-              "cloud \(f(Double(player.cloud.volume))) route gain \(f(Double(gain))), \(enabled())")
+        let expected = min(0.4 * (player.cloud.isSoundCheckOn ? player.cloud.soundCheckGain : 1), 1)
+        check("cloud setVolume sets OldTunes's own volume and the level MusicKit's player plays at, slider enabled",
+              abs(player.cloud.volume - 0.4) < 0.001 && abs(player.cloud.level - expected) < 0.001 && player.cloud.ownsVolume
+                && player.state.isVolumeEnabled,
+              "cloud \(f(Double(player.cloud.volume))) level \(f(Double(player.cloud.level))) (expected \(f(Double(expected)))), \(enabled())")
         player.setVolume(0.75)
 
-        // Without the permission, simulated: the next iCloud song's probe hears nothing.
-        player.cloud.simulatesMissingPermission = true
+        // Without the call, simulated: the next iCloud song plays at its own level.
+        player.cloud.simulatesMissingVolumeCall = true
         player.play(queue: [c1.id], startAt: c1.id)
         let started = await waitUntil(20) { self.playing(self.c1) }
         try? await Task.sleep(for: .milliseconds(300))
-        check("without System Audio Recording (simulated) an iCloud song makes no route and greys the slider out",
-              started && player.cloud.permission == .denied && player.cloud.route?.isRunning != true && !player.state.isVolumeEnabled,
-              "probe \(player.cloud.permission?.rawValue ?? "nothing yet"), route \(player.cloud.route?.isRunning == true ? "running" : "not running"), "
-              + "\(enabled()); \(stateLine())")
+        check("without setRelativeVolume: (simulated) an iCloud song greys the slider out",
+              started && !player.cloud.ownsVolume && !player.state.isVolumeEnabled, "\(enabled()); \(stateLine())")
         player.setVolume(0.5)
-        check("setVolume then still keeps OldTunes's own volume, for files and later routes",
+        check("setVolume then still keeps OldTunes's own volume, for files and later iCloud songs",
               abs(player.appVolume - 0.5) < 0.001 && abs(player.local.volume - 0.5) < 0.001 && abs(player.cloud.volume - 0.5) < 0.001,
               "OldTunes \(f(Double(player.appVolume))) local \(f(Double(player.local.volume))) cloud \(f(Double(player.cloud.volume)))")
         player.setVolume(0.75)
@@ -664,13 +675,13 @@ private final class Bench {
         let file = await waitUntil(5) { self.playing(self.l1) }
         check("a file after it enables the slider again", file && player.state.isVolumeEnabled, "\(enabled()); \(stateLine())")
 
-        player.cloud.simulatesMissingPermission = false
+        player.cloud.simulatesMissingVolumeCall = false
         player.play(queue: [c2.id], startAt: c2.id)
         let again = await waitUntil(20) { self.playing(self.c2) }
         try? await Task.sleep(for: .milliseconds(300))
-        check("with the permission back, the next iCloud song probes again, routes, and enables the slider",
-              again && player.cloud.permission == .granted && player.cloud.route?.isRunning == true && player.state.isVolumeEnabled,
-              "probe \(player.cloud.permission?.rawValue ?? "nothing yet"), \(enabled()); \(stateLine())")
+        check("with the call back, the next iCloud song sets its level and enables the slider",
+              again && player.cloud.ownsVolume && player.state.isVolumeEnabled && abs(player.cloud.volume - 0.75) < 0.001,
+              "level \(f(Double(player.cloud.level))), \(enabled()); \(stateLine())")
     }
 
     private func enabled() -> String { player.state.isVolumeEnabled ? "slider enabled" : "slider greyed out" }

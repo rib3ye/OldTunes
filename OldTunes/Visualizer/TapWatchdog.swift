@@ -1,25 +1,25 @@
 import Foundation
 import VisualizerCore
 
-/// Decides whether the tap has gone deaf: a song is playing, but nothing but exact zeros arrives.
+/// Decides whether the ears have gone deaf: a song is playing, but nothing but exact zeros arrives.
 ///
-/// Two causes look the same from here: the "System Audio Recording Only" permission is off (the tap
-/// then delivers zeros and no error), or the tap has gone silent on its own, as one report says it
-/// can in long sessions on macOS 26.5. So after `silenceLimit` of zeros it asks for one rebuild; if
-/// zeros continue for another `silenceLimit`, it asks for the hint. While the permission hint shows, it
-/// asks for a new tap every `rebuildSpacing`, since a tap made while the permission was off may stay
-/// deaf after the user turns it back on. Any non-zero sample clears the hint.
+/// Several causes look the same from here: a capture that stopped delivering, ears gone silent on
+/// their own (one report says a process tap can in long sessions on macOS 26.5), or, for the benches'
+/// tap, the "System Audio Recording Only" permission being off (the tap then delivers zeros and no
+/// error). So after `silenceLimit` of zeros it asks for one rebuild; if zeros continue for another
+/// `silenceLimit`, it asks for the hint. While the can't-hear hint shows, it asks for new ears every
+/// `rebuildSpacing`. Any non-zero sample clears the hint.
 /// Exact zeros only: real music that is merely quiet is never mistaken for silence. When the output is
 /// AirPlay it asks for an AirPlay message instead, since that audio may never pass through the tap.
 struct SilenceWatchdog: Equatable {
     /// `stopped` comes from VisualizerAudio, never from the watchdog: SelfCapture was stopped from
-    /// the menu bar and nothing else can listen without asking for the permission.
-    enum Hint: Equatable { case permission, airPlay, stopped }
+    /// the menu bar and nothing else can listen without System Audio Recording.
+    enum Hint: Equatable { case cantHear, airPlay, stopped }
     enum Advice: Equatable { case none, rebuild, showHint(Hint), clearHint }
 
     static let silenceLimit: TimeInterval = 3
     /// At most one rebuild this often; a second silence soon after goes straight to the hint. Also how
-    /// often a new tap is tried while the permission hint shows.
+    /// often new ears are tried while the can't-hear hint shows.
     static let rebuildSpacing: TimeInterval = 30
 
     private(set) var hint: Hint?
@@ -68,11 +68,11 @@ struct SilenceWatchdog: Equatable {
             return .rebuild
         }
         guard hint == nil else {
-            guard hint == .permission, now - lastRebuild >= Self.rebuildSpacing else { return .none }
+            guard hint == .cantHear, now - lastRebuild >= Self.rebuildSpacing else { return .none }
             lastRebuild = now
             return .rebuild
         }
-        let next: Hint = airPlay ? .airPlay : .permission
+        let next: Hint = airPlay ? .airPlay : .cantHear
         hint = next
         return .showHint(next)
     }
@@ -143,14 +143,14 @@ final class TapWatchdog {
         switch advice {
         case .none:
             break
-        case .rebuild where watchdog.hint == .permission:
-            Log.info("visualizer: watchdog: still only zeros under the permission hint; trying a new tap")
-            Task { await tap.rebuild(reason: "permission hint retry") }
+        case .rebuild where watchdog.hint == .cantHear:
+            Log.info("visualizer: watchdog: still only zeros under the can't-hear hint; trying again")
+            Task { await tap.rebuild(reason: "can't-hear hint retry") }
         case .rebuild:
-            Log.info("visualizer: watchdog: only zeros for \(Int(SilenceWatchdog.silenceLimit)) s while playing; rebuilding the tap")
+            Log.info("visualizer: watchdog: only zeros for \(Int(SilenceWatchdog.silenceLimit)) s while playing; rebuilding the ears")
             Task { await tap.rebuild(reason: "silent while playing") }
         case .showHint(let hint):
-            Log.info("visualizer: watchdog: still only zeros after a rebuild; showing the \(hint == .airPlay ? "AirPlay" : "permission") hint")
+            Log.info("visualizer: watchdog: still only zeros after a rebuild; showing the \(hint == .airPlay ? "AirPlay" : "can't-hear") hint")
             onHint?(hint)
         case .clearHint:
             Log.info("visualizer: watchdog: sound is arriving again; hint cleared")

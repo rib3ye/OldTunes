@@ -18,14 +18,12 @@ import MusicKit
 /// a scratchpad folder, and may be a copy of the app's index from an older version) is brought up to
 /// date by a full ingest, and a PlaybackCoordinator plays the song's row with the slider at full and
 /// Sound Check on. A file sounds from AVQueuePlayer in OldTunes; an iCloud song from
-/// CloudAudioRoute, which plays RemotePlayerService's sound out again from OldTunes. Either way
-/// the tap listens to OldTunes alone. OLDTUNES_AB_SOUND_CHECK=off turns Sound Check off; an iCloud
-/// song then plays straight from MusicKit, tapped at RemotePlayerService, which measures its own
-/// level (the app would still play it out through the route, at the slider's volume).
+/// RemotePlayerService, at the level OldTunes sets there (CloudVolume), so the tap listens to
+/// OldTunes for a file and to RemotePlayerService for an iCloud song. OLDTUNES_AB_SOUND_CHECK=off
+/// turns Sound Check off; an iCloud song then plays straight from MusicKit, which with the slider at
+/// full is the level the app plays it at too.
 ///
 /// The taps are muted, so the run is silent, and a leg whose tap reads only zeros stops after 2 s.
-/// Before an iCloud song plays through the route, a tone at −80 dBFS, too quiet to hear, checks that
-/// the muted tap on OldTunes hears (and so mutes) what OldTunes plays through an aggregate device.
 /// Music is driven with AppleScript, which the app itself never does (MusicScriptingSession,
 /// §6.5); the run leaves Music paused where it found the song. Neither play should count:
 /// OldTunes's is kept out of listening history, and Music's stops after about 25 s.
@@ -50,7 +48,7 @@ enum AudioABBench {
             return
         }
         let me = ProcessInfo.processInfo.processIdentifier
-        Log.info("AB: OldTunes pid=\(me), permission \(await SystemAudioProbe.run().rawValue)")
+        Log.info("AB: OldTunes pid=\(me)")
         guard let found = MusicState.read() else { return }
         Log.info("AB: Music before: \(found)")
         let items = (try? ITLibrary(apiVersion: "1.0", options: .lazyLoadData))?.allMediaItems ?? []
@@ -183,9 +181,9 @@ enum AudioABBench {
     }
 
     /// OldTunes's way, the app's own path end to end: the index holds the song's Sound Check value,
-    /// and PlaybackCoordinator hands it to LocalTransport (a file, sounding from AVQueuePlayer) or to
-    /// CloudTransport (an iCloud song, which CloudAudioRoute plays out again). Both sound from
-    /// OldTunes's own process, which is all the tap listens to.
+    /// and PlaybackCoordinator hands it to LocalTransport (a file, sounding from AVQueuePlayer in
+    /// OldTunes) or to CloudTransport (an iCloud song, sounding from RemotePlayerService at the level
+    /// CloudVolume sets). The tap listens to the process the song sounds from.
     static func recordOldTunesApp(_ pid: Int64, isFile: Bool, from start: Double, soundCheck: Bool, me: pid_t) async -> Take? {
         guard let path = ProcessInfo.processInfo.environment["OLDTUNES_DB_PATH"], path.contains("/scratchpad/") else {
             Log.error("AB OldTunes: the song plays from the app's index; set OLDTUNES_DB_PATH to an index inside a scratchpad folder")
@@ -209,12 +207,10 @@ enum AudioABBench {
         }
         Log.info("AB OldTunes: index row \(track.id): Sound Check energy \(track.soundCheckEnergy), "
                  + "gain \(f(SoundCheck.decibels(energy: track.soundCheckEnergy))) dB; Sound Check \(soundCheck ? "on" : "off"), slider at full")
-        guard let tap = ProcessTap.start(AudioTapBench.ownObject(me), label: "AB OldTunes") else {
+        let made = isFile ? ProcessTap.start(AudioTapBench.ownObject(me), label: "AB OldTunes")
+                          : await tapRemotePlayer(for: track, ingest: ingest)
+        guard let tap = made else {
             Log.error("AB OldTunes: no tap")
-            return nil
-        }
-        if !isFile, !(await toneCheck(tap)) {
-            tap.stop()
             return nil
         }
         let player = PlaybackCoordinator(library: index, cloud: ingest)
@@ -225,13 +221,13 @@ enum AudioABBench {
         let transport: any Transport = isFile ? player.local : player.cloud
         var take: Take?
         if await waitUntil(15, { player.state.nowPlaying?.id == track.id && transport.isPlaying && !player.state.isLoading }) {
-            if !isFile { Log.info("AB OldTunes: \(routeStatus(player.cloud))") }
+            if !isFile { Log.info("AB OldTunes: \(cloudStatus(player.cloud))") }
             player.seek(to: start)
             if await waitUntil(10, { transport.position >= start + settle }) {
                 take = await record(tap, label: "AB OldTunes") {
                     isFile ? "AVQueuePlayer at \(f(player.local.position)) s, volume \(String(format: "%.4f", player.local.playerVolume)) "
                         + "(\(f(20 * log10(Double(player.local.playerVolume)))) dB)"
-                        : "MusicKit at \(f(player.cloud.position)) s; \(routeStatus(player.cloud))"
+                        : "MusicKit at \(f(player.cloud.position)) s; \(cloudStatus(player.cloud))"
                 }
             } else {
                 Log.error("AB OldTunes: never reached \(f(start + settle)) s (at \(f(transport.position)) s)")
@@ -247,19 +243,42 @@ enum AudioABBench {
         return take
     }
 
-    static func routeStatus(_ cloud: CloudTransport) -> String {
-        guard let route = cloud.route else { return "no Sound Check route" }
-        let stats = route.stats
-        return "route \(route.mode.rawValue), \(route.isRunning ? "running" : "stopped") on \(route.outputDeviceName), "
-            + "gain \(f(20 * log10(Double(route.gain)))) dB, \(stats.buffers) buffers, \(stats.heard ? "heard sound" : "heard nothing")"
+    /// The level CloudTransport handed MusicKit's player, for the log.
+    static func cloudStatus(_ cloud: CloudTransport) -> String {
+        cloud.ownsVolume ? "level \(String(format: "%.4f", cloud.level)) (\(f(20 * log10(Double(cloud.level)))) dB) set with setRelativeVolume:"
+                         : "no setRelativeVolume:, so MusicKit's own level"
     }
 
-    /// Before an iCloud song plays out through CloudAudioRoute: does a muted process tap on
-    /// OldTunes hear what OldTunes plays through a private aggregate device? If it didn't, it
-    /// wouldn't mute it either, and the song would be heard. So this plays a 1 kHz tone at −80 dBFS,
-    /// which can't be heard, through such a device and checks the tap read it.
+    /// Makes MusicKit start its RemotePlayerService by preparing the song once, then taps that
+    /// service, muted, before anything has played. The coordinator then plays the song through the
+    /// same service.
+    static func tapRemotePlayer(for track: Track, ingest: LibraryIngest) async -> ProcessTap? {
+        guard let song = await ingest.cloudSong(for: track) else {
+            Log.error("AB OldTunes: MusicKit can't find song \(track.id)")
+            return nil
+        }
+        let player = ApplicationMusicPlayer.shared
+        let queue = ApplicationMusicPlayer.Queue(for: [song])
+        if #available(macOS 26.4, *) { queue.affectsListeningHistory = false }
+        player.queue = queue
+        do {
+            try await withTimeout(20) { @MainActor in try await ApplicationMusicPlayer.shared.prepareToPlay() }
+        } catch {
+            Log.error("AB OldTunes: the song would not prepare: \(error)")
+            return nil
+        }
+        player.queue = []
+        let remotes = AudioTapBench.remotes()
+        Log.info("AB OldTunes: RemotePlayerService after prepareToPlay: \(remotes.map(AudioTapBench.describe))")
+        return remotes.isEmpty ? nil : ProcessTap.start(AudioTapBench.ours(remotes), label: "AB OldTunes RemotePlayerService")
+    }
+
+    /// Before a bench plays through a private aggregate device of its own (LocalSoundCheckBench):
+    /// does a muted process tap on OldTunes hear what OldTunes plays through such a device? If it
+    /// didn't, it wouldn't mute it either, and the sound would be heard. So this plays a 1 kHz tone at
+    /// −80 dBFS, which can't be heard, through such a device and checks the tap read it.
     static func toneCheck(_ tap: ProcessTap) async -> Bool {
-        guard let output = HAL.defaultOutputDevice(), let uid = HAL.deviceUID(output) else {
+        guard let output = AudioHAL.defaultOutputDevice(), let uid = AudioHAL.deviceUID(output) else {
             Log.error("AB tone check: no default output device")
             return false
         }
@@ -294,7 +313,7 @@ enum AudioABBench {
         // A sine's RMS is 3 dB under its peak: −83 dBFS, less where the window caught silence.
         let heard = rms > -95 && rms < -80
         Log.info("AB tone check: the tap on OldTunes read \(window.summary) while a −80 dBFS tone played through an "
-                 + "aggregate device: \(heard ? "it hears (and mutes) what the route plays" : "it does NOT; stopping before any music")")
+                 + "aggregate device: \(heard ? "it hears (and mutes) what plays through one" : "it does NOT; stopping before any sound")")
         return heard
     }
 

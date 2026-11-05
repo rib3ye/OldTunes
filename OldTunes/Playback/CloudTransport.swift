@@ -7,10 +7,12 @@ import MusicKit
 /// cannot move on by itself and "now playing" cannot drift from what is audible. MusicKit gives no
 /// end-of-song callback, so the end is detected from the 10 Hz clock by CloudEndDetector.
 ///
-/// MusicKit has no volume on macOS and plays the song in another process, so every song is played
-/// out again through CloudAudioRoute, which sets its level: OldTunes's own volume, times the song's
-/// Sound Check gain when that is on. Without the System Audio Recording permission there is no
-/// route; the song plays at its own level and the volume slider greys out.
+/// MusicKit has no volume on macOS and plays the song in another process, so CloudVolume sets the
+/// level in that process: OldTunes's own volume, times the song's Sound Check gain when that is on,
+/// capped at full, the most that process plays at. So Sound Check turns iCloud songs down but can't
+/// turn them up; a file gets its boost, as OldTunes changes its samples itself (LocalSoundCheck).
+/// Nothing listens to the song, so OldTunes needs no System Audio Recording. If macOS ever lacks
+/// the call, the song plays at its own level and the volume slider greys out.
 @MainActor
 final class CloudTransport: Transport {
     var onFinish: (() -> Void)?
@@ -37,29 +39,14 @@ final class CloudTransport: Transport {
     var soundCheckGain: Float = 1 {
         didSet { applyGain() }
     }
-    /// Made at the first song, unless SystemAudioProbe found the System Audio Recording permission
-    /// off. Internal for the harness.
-    private(set) var route: CloudAudioRoute?
-    /// System Audio Recording as SystemAudioProbe found it at this launch's first iCloud song; nil
-    /// until that probe answers.
-    private(set) var permission: SystemAudioProbe.Answer?
-    private var permissionTest: Task<SystemAudioProbe.Answer, Never>?
-    /// Counts probes, so one the harness has made stale doesn't write its answer.
-    private var permissionTests = 0
-    /// Whether OldTunes sets the song's level itself: true unless the probe found the permission
-    /// off, or the route went back to only listening because its tap heard nothing. When false, the
-    /// volume slider greys out: it would change nothing anyone hears.
-    var ownsVolume: Bool { permission != .denied && route?.mode != .listening }
-    /// Harness only: the probe and the route hear only silence, as without System Audio Recording.
-    /// Setting it forgets the probe's answer, so the next song tests again.
-    var simulatesMissingPermission = false {
-        didSet {
-            route?.simulatesMissingPermission = simulatesMissingPermission
-            permission = nil
-            permissionTest = nil
-            permissionTests += 1
-        }
-    }
+    /// The level last handed to MusicKit's player (CloudVolume), 0 to 1. Internal for the harness.
+    private(set) var level: Float = 1
+    /// Whether OldTunes sets the song's level itself: false once CloudVolume found no call to set it
+    /// with. When false, the volume slider greys out: it would change nothing anyone hears.
+    private(set) var ownsVolume = true
+    /// Harness only, and OLDTUNES_SIMULATE_NO_CLOUD_VOLUME: play as if macOS had no setRelativeVolume:.
+    /// Takes effect at the next song, as a missing call would from the first.
+    var simulatesMissingVolumeCall = false
 
     private(set) var duration: TimeInterval = 0
     /// False until the first load, so a local-only session never starts MusicKit's player service.
@@ -86,7 +73,7 @@ final class CloudTransport: Transport {
     var position: TimeInterval { loaded ? max(0, ApplicationMusicPlayer.shared.playbackTime) : 0 }
     var isPlaying: Bool { loaded && wantsPlay }
 
-    /// OldTunes's own volume, which the route plays the song out at.
+    /// OldTunes's own volume, which MusicKit's player plays the song at.
     var volume: Float {
         get { appVolume }
         set {
@@ -95,8 +82,14 @@ final class CloudTransport: Transport {
         }
     }
 
+    /// Hands the level to MusicKit's player once a song is loaded; before the first load there is no
+    /// player to hand it to, and starting one would start MusicKit's player service for nothing.
+    /// MusicKit's player plays nothing louder than full (2 plays as 1), so a Sound Check boost is
+    /// capped there.
     private func applyGain() {
-        route?.gain = appVolume * (isSoundCheckOn ? soundCheckGain : 1)
+        level = min(appVolume * (isSoundCheckOn ? soundCheckGain : 1), 1)
+        guard loaded else { return }
+        ownsVolume = !simulatesMissingVolumeCall && CloudVolume.set(level)
     }
 
     func load(_ what: Playable) async throws {
@@ -125,71 +118,12 @@ final class CloudTransport: Transport {
         duration = song.duration ?? 0
         settleFrom = .now
         end = CloudEndDetector()
-        // The first song of a launch tests the permission while MusicKit prepares it. On a Mac that
-        // was never asked, this is where the permission prompt appears.
-        _ = testPermission()
         try await withTimeout(20) { @MainActor in try await ApplicationMusicPlayer.shared.prepareToPlay() }
-        // After prepareToPlay, which is when RemotePlayerService exists to be tapped, and before
-        // play(), so the song is routed from its first sample.
-        await startRoute()
-    }
-
-    /// The probe of this launch, started at its first iCloud song. Its answer stands for the rest
-    /// of the launch; the route checks again only when its tap hears silence.
-    private func testPermission() -> Task<SystemAudioProbe.Answer, Never> {
-        if let permissionTest { return permissionTest }
-        permissionTests += 1
-        let generation = permissionTests
-        let simulated = simulatesMissingPermission
-        let test = Task { @MainActor [weak self] in
-            let answer = await SystemAudioProbe.run(simulatingMissingPermission: simulated)
-            if let self, self.permissionTests == generation { self.permission = answer }
-            if !simulated, answer != .untested { SystemAudioProbe.lastAnswer = answer }
-            return answer
-        }
-        permissionTest = test
-        return test
-    }
-
-    /// Starts the route for the loaded song, once the probe has found the permission on (or
-    /// couldn't tell: a route without it hears silence and gives up by itself). Waits at most 1.5 s
-    /// for each. Only the first tap a Mac ever sees takes longer, because it waits for the permission
-    /// prompt; the song then starts at its own level, and the route takes over once it is built.
-    private func startRoute() async {
-        if permission == nil {
-            let test = testPermission()
-            guard (try? await withTimeout(1.5, { await test.value })) != nil else {
-                Log.info("cloud: still finding out whether System Audio Recording is on; this song starts at its own level")
-                Task { [weak self] in
-                    _ = await test.value
-                    guard let self, self.loaded, self.route?.isRunning != true else { return }
-                    await self.startRoute()
-                }
-                return
-            }
-        }
-        guard permission != .denied else {
-            // A route made before the answer changed (the harness) must not go on playing out.
-            route?.pause()
-            if !toldNoRoute {
-                toldNoRoute = true
-                Log.info("cloud: System Audio Recording is off for OldTunes, so iCloud songs play at their own level "
-                         + "and the volume slider is greyed out during them")
-            }
-            return
-        }
-        let route = self.route ?? CloudAudioRoute()
-        if self.route == nil { route.simulatesMissingPermission = simulatesMissingPermission }
-        self.route = route
+        // After prepareToPlay, when MusicKit's player has its server, and before play(), so the song
+        // starts at its level. The level outlasts a song, but setting it again costs nothing.
         applyGain()
-        do {
-            try await withTimeout(1.5) { @MainActor in await route.start() }
-        } catch {
-            Log.info("cloud: the route is still being made; this song starts at its own level")
-        }
+        if simulatesMissingVolumeCall { Log.info("cloud: no setRelativeVolume: (simulated); this song plays at its own level") }
     }
-
-    private var toldNoRoute = false
 
     func play() async throws {
         guard loaded else { throw TransportError.notPlayable }
@@ -235,9 +169,6 @@ final class CloudTransport: Transport {
         endRequested = false
         musicKitWasPlaying = false
         duration = 0
-        // Nothing to play out until the next song; this also gives RemotePlayerService its own
-        // output back.
-        route?.pause()
     }
 
     func seek(to seconds: TimeInterval) {
@@ -262,7 +193,6 @@ final class CloudTransport: Transport {
         let status = player.state.playbackStatus
         if status == .playing, !musicKitWasPlaying, !keepsMediaControlsInApp { onMusicKitStartedPlaying?() }
         musicKitWasPlaying = status == .playing
-        route?.watch(playing: status == .playing, position: max(0, player.playbackTime))
         guard !finished else { return }
         if endRequested, wantsPlay {
             endRequested = false

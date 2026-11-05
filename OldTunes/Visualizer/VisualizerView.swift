@@ -37,7 +37,6 @@ final class VisualizerView: NSView {
             addSubview(overlay)
         }
         keyList.text = Self.keyListText
-        hintBox.onClick = { [weak self] in self?.openPrivacySettings() }
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityLabel("Visualizer")
@@ -102,14 +101,13 @@ final class VisualizerView: NSView {
         }
     }
 
-    /// The watchdog's hint, or nil to clear it. The permission hint opens System Settings when clicked.
+    /// The watchdog's hint, or nil to clear it.
     func showHint(_ hint: SilenceWatchdog.Hint?) {
         self.hint = hint
         switch hint {
-        case .permission?:
+        case .cantHear?:
             hintBox.text = "The visualizer can't hear the music.\n"
-                + "Turn on OldTunes in System Settings ▸ Privacy & Security ▸ Screen & System Audio Recording, "
-                + "under System Audio Recording Only. Click here to open it."
+                + "It keeps trying. Turning the visualizer off and on again may help."
         case .airPlay?:
             hintBox.text = "The visualizer can't hear music playing over AirPlay."
         case .stopped?:
@@ -163,14 +161,6 @@ final class VisualizerView: NSView {
         }
     }
 
-    private func openPrivacySettings() {
-        guard hint == .permission else { return }
-        // The "Screen & System Audio Recording" pane; the audio-only list is on the same page.
-        let pane = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-        if pane.map({ NSWorkspace.shared.open($0) }) != true {
-            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
-        }
-    }
 }
 
 /// White text on a translucent black rounded box, drawn over the visualizer.

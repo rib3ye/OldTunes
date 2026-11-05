@@ -84,7 +84,9 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSAppleMusicUsageDescription: OldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.
         NSAppleEventsUsageDescription: OldTunes asks Music to save tag changes to songs in your Music library, to add songs to Music when you turn on “Also add to the Music app”, to make, rename and delete the playlists you change in OldTunes and add or remove songs in them, and to download iCloud songs to this Mac.
-        NSAudioCaptureUsageDescription: OldTunes takes the sound of the iCloud songs it plays from Apple's player, so its volume and Sound Check can set their level, and so a visualizer can move with the music.
+        # Only the test benches' process taps ask for System Audio Recording; Release builds leave
+        # those out (below), so the app that ships never shows this.
+        NSAudioCaptureUsageDescription: Only OldTunes's own test builds use this, to measure the sound of the songs they play. The OldTunes you download never asks for it.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.noahtsutsui.oldtunes
@@ -116,6 +118,9 @@ targets:
             - MusicWebPlaylistClient.swift
             - AudioProcessProbe.swift
             - CloudEndProbe.swift
+            # The visualizer's process tap, which needs System Audio Recording: only the benches
+            # use it, so the app that ships can't record system audio (tools/release.sh checks).
+            - MusicAudioTap.swift
             - StressLibrary.swift
             - Snapshot.swift
   # The visualizer: Geiss HDR's engine and shaders ported to Swift and Metal, plus the audio

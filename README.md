@@ -16,14 +16,14 @@ iCloud and were never downloaded ("iCloud songs" below), plus music files on you
 
 To update, do the same with the newer zip and replace the old app.
 
-You need macOS 14 or later (the visualizer needs macOS 14.2). There's nothing to sign in to:
+You need macOS 14 or later (the visualizer needs macOS 14.4). There's nothing to sign in to:
 OldTunes uses the Apple Account the Music app already uses on your Mac. To play iCloud songs,
 turn on Sync Library in the Music app (Music ▸ Settings ▸ General).
 
 ## What macOS asks for, and why
 
 macOS keeps every app away from your music, your other apps and your Mac's sound until you say
-yes. OldTunes asks for three things, each only the first time it needs it.
+yes. OldTunes asks for two things, each only the first time it needs it.
 
 ### Media & Apple Music
 
@@ -48,26 +48,17 @@ out of sight. OldTunes never uses this to play anything in Music.
 **If you said no:** OldTunes can't save those changes or download songs. Turn it on in System
 Settings ▸ Privacy & Security ▸ Automation ▸ OldTunes ▸ Music.
 
-### System Audio Recording
+### Nothing else
 
-**When:** the first time you play an iCloud song. On macOS 14.2 and 14.3, also the first time you
-turn on the visualizer.
+OldTunes doesn't ask for the microphone, Screen Recording or System Audio Recording. Older
+versions asked for System Audio Recording to set the volume of iCloud songs. This one sets it
+without listening to them. If you allowed it before, you can turn it off: open System Settings ▸
+Privacy & Security ▸ Screen & System Audio Recording, and under System Audio Recording Only,
+turn off OldTunes.
 
-**Why:** OldTunes doesn't play iCloud songs itself. A separate Apple player does, out of sight.
-To set their volume and use Sound Check on them, OldTunes takes their sound from that player
-and plays it out itself. The visualizer listens the same way. macOS calls listening to that
-sound "recording". OldTunes listens only to its own songs, and it doesn't record or save anything.
-
-On macOS 14.4 and later, the visualizer can also listen another way, which needs no permission. It
-does that if you said no, and until OldTunes has checked the permission at your first iCloud song.
-While it does, macOS counts OldTunes as sharing its own window, so you may see the screen-sharing
-icon in the menu bar, and notifications may wait until you turn the visualizer off.
-
-**If you said no:** iCloud songs still play, but at their own volume. The volume slider is
-greyed out while one plays, and Sound Check can't change it. On macOS 14.2 and 14.3, the
-visualizer says it can't hear the music. To turn the permission on, open System Settings ▸
-Privacy & Security ▸ Screen & System Audio Recording, and under System Audio Recording Only, turn
-on OldTunes. Then quit and reopen OldTunes.
+The visualizer hears the music without any permission. While it's on, macOS counts OldTunes as
+sharing its own window, so you may see the screen-sharing icon in the menu bar, and notifications
+may wait until you turn the visualizer off.
 
 ### Your folders
 
@@ -156,15 +147,16 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 - **Light or dark.** In OldTunes ▸ Settings (⌘,), pick Light (the 2005 look), Dark, or Match
   System, which follows your Mac. Match System is the default.
 - **Sound Check**, also in Settings, plays every song about equally loud, using the levels the
-  Music app measured. It can raise quiet files above their original level.
-  Sound Check is off until you turn it on.
+  Music app measured. It can raise quiet files above their original level. iCloud songs it can
+  only turn down, so a quiet iCloud song plays at its own level. Sound Check is off until you
+  turn it on.
 - **Its own volume.** The volume slider (or ⌘↑ and ⌘↓) changes only OldTunes, not your whole Mac.
   OldTunes remembers it.
 - **Visualizer.** Click the flower button at the bottom right, or press ⌘T, to swap the song list
   for moving light that follows the music, as iTunes 4.9 did. ⇧⌘F fills the screen with it, and
   Esc comes back. Inside it, press H to see its keys; R picks a new look. On a screen that can
   show HDR, its brightest colours glow brighter than white, and Settings ▸ Visualizer turns that
-  off. Needs macOS 14.2 or later. It's based on [Geiss HDR](https://www.geisswerks.com/geiss_hdr)
+  off. Needs macOS 14.4 or later. It's based on [Geiss HDR](https://www.geisswerks.com/geiss_hdr)
   by Ryan Geiss.
 
   <img src="docs/visualizer-wave.jpg" width="49%" alt="The visualizer: a red and yellow wave across dark blue">

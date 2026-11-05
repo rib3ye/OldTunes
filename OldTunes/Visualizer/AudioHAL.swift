@@ -2,7 +2,7 @@ import CoreAudio
 import Foundation
 import os
 
-/// Small, synchronous reads of the Core Audio HAL, for the visualizer's tap and the cloud route.
+/// Small, synchronous reads of the Core Audio HAL, for the visualizer's ears and the benches' taps.
 /// Safe on any thread.
 ///
 /// AudioTapBench and AudioProcessProbe have their own copies of some of this; they are harness code

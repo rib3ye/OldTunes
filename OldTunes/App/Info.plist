@@ -29,7 +29,7 @@
 	<key>NSAppleMusicUsageDescription</key>
 	<string>OldTunes reads your music library so it can list, search and play your songs, including the ones stored in iCloud.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>OldTunes takes the sound of the iCloud songs it plays from Apple's player, so its volume and Sound Check can set their level, and so a visualizer can move with the music.</string>
+	<string>Only OldTunes's own test builds use this, to measure the sound of the songs they play. The OldTunes you download never asks for it.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

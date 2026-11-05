@@ -827,8 +827,8 @@ final class PlaybackCoordinator: PlaybackControlling {
         }
     }
 
-    /// The slider greys out during an iCloud song OldTunes can't set the level of (no System Audio
-    /// Recording permission): moving it would change nothing anyone hears.
+    /// The slider greys out during an iCloud song OldTunes can't set the level of (a macOS without
+    /// CloudVolume's call): moving it would change nothing anyone hears.
     private func volumeApplies(to transport: any Transport) -> Bool {
         transport !== cloud || cloud.ownsVolume
     }
@@ -844,8 +844,6 @@ final class PlaybackCoordinator: PlaybackControlling {
         var next = state
         next.position = min(transport.position, state.duration > 0 ? state.duration : .infinity)
         next.isPlaying = transport.isPlaying || pendingResume === transport
-        // An iCloud song's route can give up mid-song (its tap heard silence, and so did the probe).
-        next.isVolumeEnabled = volumeApplies(to: transport)
         if next != state {
             state = next
         } else if next.isPlaying {
