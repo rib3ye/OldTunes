@@ -21,7 +21,8 @@ iCloud and were never downloaded ("iCloud songs" below), plus music files on you
 3. Open oldTunes. The first time, macOS asks if you're sure you want to open an app from the
    internet. Click **Open**.
 
-To update, do the same with the newer zip and replace the old app.
+To update, do the same with the newer zip and replace the old app. Versions before November 2026
+were called OldTunes. It's the same app, so replace that one too.
 
 You need macOS 14 or later (the visualizer needs macOS 14.4). There's nothing to sign in to:
 oldTunes uses the Apple Account the Music app already uses on your Mac. To play iCloud songs,
