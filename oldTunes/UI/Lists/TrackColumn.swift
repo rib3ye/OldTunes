@@ -91,7 +91,7 @@ struct TrackColumnLayout: Codable, Equatable, Sendable {
     }
     var entries: [Entry]
 
-    static let defaultsKey = "OldTunes.TrackList.columns"
+    static let defaultsKey = "oldTunes.TrackList.columns"
 
     static var standard: TrackColumnLayout {
         TrackColumnLayout(entries: TrackColumn.allCases.map {

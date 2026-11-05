@@ -318,9 +318,9 @@ final class TrackListViewController: NSViewController {
     private var browserFraction = Theme.Metrics.browserDefaultFraction
 
     /// `savedSort`, as ["field": TrackSortField raw value, "ascending": Bool].
-    static let sortDefaultsKey = "OldTunes.TrackList.sort"
-    private static let browserVisibleKey = "OldTunes.TrackList.browserVisible"
-    private static let browserFractionKey = "OldTunes.TrackList.browserFraction"
+    static let sortDefaultsKey = "oldTunes.TrackList.sort"
+    private static let browserVisibleKey = "oldTunes.TrackList.browserVisible"
+    private static let browserFractionKey = "oldTunes.TrackList.browserFraction"
     private static let rowViewID = NSUserInterfaceItemIdentifier("trackRow")
 
     private enum ScrollPolicy { case top, keepTopRow, revealSelection }

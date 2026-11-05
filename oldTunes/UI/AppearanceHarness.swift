@@ -24,8 +24,8 @@ enum AppearanceHarness {
     /// window's frame on this screen, over the one the user left.
     private static let restoredKeys = [AppearancePreference.defaultsKey, SoundCheckPreference.defaultsKey,
                                        TrackColumnLayout.defaultsKey,
-                                       "OldTunes.TrackList.browserVisible", "OldTunes.TrackList.browserFraction",
-                                       "OldTunes.SourceList.expandedFolders", MetalContentView.sourceWidthDefaultsKey,
+                                       "oldTunes.TrackList.browserVisible", "oldTunes.TrackList.browserFraction",
+                                       "oldTunes.SourceList.expandedFolders", MetalContentView.sourceWidthDefaultsKey,
                                        SettingsWindowController.frameDefaultsKey, VisualizerPreference.hdrKey]
 
     static func run() async {
@@ -458,8 +458,8 @@ enum AppearanceHarness {
             let library = ListsHarnessLibrary(index: await ListsHarnessLibrary.buildIndex(snap))
             let main = MainWindow(library: library, songs: snap.tracks)
             // Start from the default layout, whatever an earlier run left behind.
-            for key in [TrackColumnLayout.defaultsKey, "OldTunes.TrackList.browserVisible",
-                        "OldTunes.TrackList.browserFraction", MetalContentView.sourceWidthDefaultsKey] {
+            for key in [TrackColumnLayout.defaultsKey, "oldTunes.TrackList.browserVisible",
+                        "oldTunes.TrackList.browserFraction", MetalContentView.sourceWidthDefaultsKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             main.embed()

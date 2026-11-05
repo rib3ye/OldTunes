@@ -6,7 +6,7 @@ import Foundation
 /// change to the player.
 @MainActor
 enum SoundCheckPreference {
-    static let defaultsKey = "OldTunes.soundCheck"
+    static let defaultsKey = "oldTunes.soundCheck"
 
     static var saved: Bool { UserDefaults.standard.bool(forKey: defaultsKey) }
 
@@ -25,5 +25,5 @@ enum SoundCheckPreference {
 
 extension Notification.Name {
     /// Posted on the main thread when `SoundCheckPreference.current` changes.
-    static let soundCheckDidChange = Notification.Name("OldTunes.soundCheckDidChange")
+    static let soundCheckDidChange = Notification.Name("oldTunes.soundCheckDidChange")
 }

@@ -431,7 +431,7 @@ protocol TagEditing: Sendable {
 extension Notification.Name {
     /// Posted on the main thread after the index changes (ingest, folder add, tag edit, a playlist
     /// edit). Anything may have changed, unless `userInfo` says what did (`LibraryChange`).
-    static let libraryDidChange = Notification.Name("OldTunes.libraryDidChange")
+    static let libraryDidChange = Notification.Name("oldTunes.libraryDidChange")
 }
 
 /// What `.libraryDidChange`'s `userInfo` can say about a change.
@@ -439,5 +439,5 @@ enum LibraryChange {
     /// An `Int64`: the playlist songs were just added to (`PlaylistEdit.songsAdded`, one chunk of
     /// an add), and nothing else changed: no song, no other playlist's songs, and no playlist's
     /// name, kind or place. Only a list showing that playlist has anything new.
-    static let songsAddedTo = "OldTunes.libraryDidChange.songsAddedTo"
+    static let songsAddedTo = "oldTunes.libraryDidChange.songsAddedTo"
 }

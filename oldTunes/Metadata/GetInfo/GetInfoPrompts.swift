@@ -4,7 +4,7 @@ import AppKit
 @MainActor
 enum GetInfoPrompts {
     /// UserDefaults key for the §6.6 sheet's "Don't show again" box.
-    static let suppressFileWarningKey = "OldTunesSuppressFileTagWarning"
+    static let suppressFileWarningKey = "oldTunesSuppressFileTagWarning"
     /// Shown at most once per launch even without the box ticked, so a run of edits is not
     /// interrupted every time.
     private static var fileWarningShownThisLaunch = false

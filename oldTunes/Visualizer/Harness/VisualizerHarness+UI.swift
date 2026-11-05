@@ -30,10 +30,10 @@ extension VisualizerHarness {
         }
         let defaults = UserDefaults.standard
         // Settings' OK saves the Appearance choice along with the HDR box, so it is put back too.
-        let keys = ["NSWindow Frame OldTunesMainWindow", VisualizerPreference.hdrKey, SettingsWindowController.frameDefaultsKey,
+        let keys = ["NSWindow Frame oldTunesMainWindow", VisualizerPreference.hdrKey, SettingsWindowController.frameDefaultsKey,
                     AppearancePreference.defaultsKey,
-                    TrackColumnLayout.defaultsKey, "OldTunes.TrackList.browserVisible", "OldTunes.TrackList.browserFraction",
-                    "OldTunes.TrackList.sort", "OldTunes.SourceList.expandedFolders", MetalContentView.sourceWidthDefaultsKey]
+                    TrackColumnLayout.defaultsKey, "oldTunes.TrackList.browserVisible", "oldTunes.TrackList.browserFraction",
+                    "oldTunes.TrackList.sort", "oldTunes.SourceList.expandedFolders", MetalContentView.sourceWidthDefaultsKey]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
 
         await runUIChecks(bench)

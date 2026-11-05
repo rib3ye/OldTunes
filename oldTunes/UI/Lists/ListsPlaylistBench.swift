@@ -555,7 +555,7 @@ final class ListsPlaylistBench {
             try await index.apply(.deleted(501))
             let left = try await index.playlists().map(\.id)
             let orphans = try await index.pool.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM playlist_item WHERE playlist_id IN (511, 512)") }
-            let open = UserDefaults.standard.array(forKey: "OldTunes.SourceList.expandedFolders") as? [NSNumber] ?? []
+            let open = UserDefaults.standard.array(forKey: "oldTunes.SourceList.expandedFolders") as? [NSNumber] ?? []
             check("deleting a folder takes everything in it, selects the next row, and forgets the folder was open",
                   table.selectedRow == folderRow && source.scope == .playlist(601) && Set(left).isDisjoint(with: gone)
                   && left.count == 5 && orphans == 0 && !open.contains(NSNumber(value: Int64(501))),

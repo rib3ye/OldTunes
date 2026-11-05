@@ -14,8 +14,8 @@ enum ListsHarness {
     /// columns, the sort, the browser and its height, open playlist folders. The harness runs with
     /// the app's own bundle id, so these are the user's settings; run() puts them back before quitting.
     static let layoutKeys = [TrackColumnLayout.defaultsKey, TrackListViewController.sortDefaultsKey,
-                             "OldTunes.TrackList.browserVisible", "OldTunes.TrackList.browserFraction",
-                             "OldTunes.SourceList.expandedFolders"]
+                             "oldTunes.TrackList.browserVisible", "oldTunes.TrackList.browserFraction",
+                             "oldTunes.SourceList.expandedFolders"]
 
     /// Runs `body` in the appearance the bench windows draw in (each inherits the app's), so the
     /// Theme colors it turns into numbers, and the gradients Theme picks by `Theme.isDark`, come

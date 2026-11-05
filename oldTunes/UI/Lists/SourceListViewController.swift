@@ -338,7 +338,7 @@ final class SourceListViewController: NSViewController {
     private var menuTarget: PlaylistInfo?
     private var menuParent: Int64?
 
-    private static let expandedKey = "OldTunes.SourceList.expandedFolders"
+    private static let expandedKey = "oldTunes.SourceList.expandedFolders"
     private static let rowID = NSUserInterfaceItemIdentifier("sourceRow")
     private static let cellID = NSUserInterfaceItemIdentifier("sourceCell")
 

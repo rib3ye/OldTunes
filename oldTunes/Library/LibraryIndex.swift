@@ -18,7 +18,7 @@ final class LibraryIndex: LibraryReading, LibraryWriting, Sendable {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         var config = Configuration()
-        config.label = "OldTunes.index"
+        config.label = "oldTunes.index"
         // §4.2's pragmas. DatabasePool already puts the file in WAL mode.
         config.prepareDatabase { db in
             try db.execute(sql: """

@@ -22,7 +22,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     /// Where AppKit saves the window's frame in UserDefaults; the appearance harness puts it back.
     static let frameDefaultsKey = "NSWindow Frame \(frameName)"
-    private static let frameName = "OldTunesSettings"
+    private static let frameName = "oldTunesSettings"
 
     private let aquaWindow: AquaWindow
     private let radios: [(mode: AppearanceMode, button: AquaRadioButton)]

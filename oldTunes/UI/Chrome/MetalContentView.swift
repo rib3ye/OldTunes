@@ -26,7 +26,7 @@ final class MetalContentView: NSView {
     /// Which appearance the cached metal was built for: graphite and aluminum are different bitmaps.
     private var metalIsDark = false
 
-    static let sourceWidthDefaultsKey = "OldTunes.Chrome.sourcePaneWidth"
+    static let sourceWidthDefaultsKey = "oldTunes.Chrome.sourcePaneWidth"
     /// The track pane never gets narrower than this, whatever the stored source width.
     static let minimumTrackWidth: CGFloat = 200
 

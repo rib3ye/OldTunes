@@ -427,7 +427,7 @@ final class ListsStressBench {
         }
         tracks.view.layoutSubtreeIfNeeded()
         let h1 = browserBox.frame.height
-        let saved = UserDefaults.standard.double(forKey: "OldTunes.TrackList.browserFraction")
+        let saved = UserDefaults.standard.double(forKey: "oldTunes.TrackList.browserFraction")
         check("dragging the browser splitter resizes and persists it", abs((h1 - h0) - 50) <= 1
               && abs(saved - Double(h1 / tracks.view.bounds.height)) < 0.01,
               "browser \(h0) → \(h1) pt, saved fraction \(String(format: "%.3f", saved))")

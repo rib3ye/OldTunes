@@ -73,7 +73,7 @@ enum AppAssembly {
         }
     }
 
-    nonisolated private static let rebuildKey = "OldTunes.rebuildIndexOnLaunch"
+    nonisolated private static let rebuildKey = "oldTunes.rebuildIndexOnLaunch"
 
     /// Off the main thread, after the window is up. Returns false if the next launch must rebuild.
     nonisolated static func checkIntegrityInBackground(_ index: LibraryIndex) async -> Bool {

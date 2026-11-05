@@ -5,9 +5,9 @@ import Foundation
 /// once; OK keeps it and Cancel puts back what was showing.
 @MainActor
 enum VisualizerPreference {
-    static let hdrKey = "OldTunes.Visualizer.hdr"
+    static let hdrKey = "oldTunes.Visualizer.hdr"
     /// Posted when `currentHDR` changes, so a running visualizer switches.
-    static let didChange = Notification.Name("OldTunesVisualizerPreferenceDidChange")
+    static let didChange = Notification.Name("oldTunesVisualizerPreferenceDidChange")
 
     /// The saved choice: on until the user turns it off.
     static var savedHDR: Bool {

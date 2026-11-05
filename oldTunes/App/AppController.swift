@@ -70,9 +70,6 @@ final class AppController: NSObject {
         if LaunchEnvironment.value("OLDTUNES_SIMULATE_NO_CLOUD_VOLUME") == "1" {
             player.cloud.simulatesMissingVolumeCall = true
         }
-        // What oldTunes's old System Audio Recording check found, kept by releases up to November
-        // 2026. Nothing asks for that permission any more, so nothing reads it.
-        UserDefaults.standard.removeObject(forKey: "OldTunes.systemAudioRecording")
         sources = SourceListViewController(library: index)
         tracks = TrackListViewController(library: index)
         super.init()
@@ -153,7 +150,7 @@ final class AppController: NSObject {
         window.setFrameAutosaveName(Self.frameName)
     }
 
-    private static let frameName = "OldTunesMainWindow"
+    private static let frameName = "oldTunesMainWindow"
 
     // MARK: - Wiring
 
@@ -311,7 +308,7 @@ final class AppController: NSObject {
     }
 
     /// oldTunes's own volume, as the user last left it.
-    static let volumeKey = "OldTunes.volume"
+    static let volumeKey = "oldTunes.volume"
 
     /// The slider and ⌘↑/⌘↓. oldTunes's own volume is kept between launches, as iTunes kept its
     /// own. Both grey out during an iCloud song oldTunes can't set the level of.
@@ -505,11 +502,11 @@ final class AppController: NSObject {
 
     // MARK: - Added folders
 
-    private static let foldersKey = "OldTunes.folderRoots"
+    private static let foldersKey = "oldTunes.folderRoots"
     /// The Add panel's "Also add to the Music app" box, as the user last left it.
-    static let alsoAddToMusicKey = "OldTunes.AddFolder.alsoAddToMusic"
+    static let alsoAddToMusicKey = "oldTunes.AddFolder.alsoAddToMusic"
     /// Every file handed to Music; a copy of the index's record, for a rebuilt index.
-    private static let handoffsKey = "OldTunes.musicHandoffs"
+    private static let handoffsKey = "oldTunes.musicHandoffs"
 
     private static func rememberFolder(_ url: URL) {
         var roots = UserDefaults.standard.stringArray(forKey: foldersKey) ?? []

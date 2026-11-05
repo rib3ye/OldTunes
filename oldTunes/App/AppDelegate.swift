@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static var shared: AppDelegate?
 
     static func main() {
+        // Before anything reads a setting, AppKit's window frames included.
+        SettingsRename.moveOldKeys()
         let app = NSApplication.shared
         let delegate = AppDelegate()
         shared = delegate
@@ -36,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // line is how a first sandboxed launch shows that macOS moved the old ones in.
         let sandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
         let settings = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?
-            .keys.filter { $0.hasPrefix("OldTunes") }.count ?? 0
+            .keys.filter { $0.hasPrefix("oldTunes") }.count ?? 0
         Log.info("launch: \(sandboxed ? "sandboxed" : "not sandboxed"), home \(NSHomeDirectory()), \(settings) oldTunes settings")
         if !notOurs.isEmpty {
             Log.info("cloud: RemotePlayerService running before oldTunes started, so not ours: \(notOurs)")

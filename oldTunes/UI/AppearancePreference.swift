@@ -22,7 +22,7 @@ enum AppearanceMode: String, CaseIterable, Sendable {
 /// including its Auto setting, which switches the Mac at sunset with oldTunes along with it.
 @MainActor
 enum AppearancePreference {
-    static let defaultsKey = "OldTunes.appearance"
+    static let defaultsKey = "oldTunes.appearance"
 
     /// The saved choice. Match System until the user picks one.
     static var saved: AppearanceMode {

@@ -11,7 +11,7 @@ import Foundation
 @MainActor
 enum FolderAccess {
     /// Bookmark data by folder path, the path AppController remembers the folder under.
-    static let bookmarksKey = "OldTunes.folderBookmarks"
+    static let bookmarksKey = "oldTunes.folderBookmarks"
 
     /// The folders open this run. Never closed: oldTunes plays and edits their songs until it quits.
     private static var opened: [String: URL] = [:]
