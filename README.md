@@ -6,6 +6,13 @@ iCloud and were never downloaded ("iCloud songs" below), plus music files on you
 
 ![OldTunes playing a song](docs/screenshot.png)
 
+<img src="docs/visualizer-wave.jpg" width="49%" alt="The visualizer: a red and yellow wave across dark blue">
+<img src="docs/visualizer-ring.jpg" width="49%" alt="The visualizer: a ring of green light">
+<img src="docs/visualizer-zoom.jpg" width="49%" alt="The visualizer: pink light streaming out from the middle">
+<img src="docs/visualizer-stars.jpg" width="49%" alt="The visualizer: an orange wave through blue specks">
+
+*Stills from the visualizer, based on Geiss HDR by Ryan Geiss.*
+
 ## Get OldTunes
 
 1. Download the newest `OldTunes` zip from the
@@ -77,94 +84,22 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 
 - **Plays your whole library.** Songs on your Mac and iCloud songs play from the same list.
 - **Search as you type.** It finds words even from the middle: "nderw" finds "Underworld".
-- **Sort** by clicking a column title, like Name, Artist or Date Added. Click it again to reverse
-  the order. OldTunes remembers your choice, and playlists keep their own order.
-- **Shuffle and repeat** with the buttons under the playlists. Repeat can be off, all, or one song.
-- **Dock menu.** Right-click the OldTunes icon in the Dock to see what's playing, play or pause,
-  skip, and set Shuffle and Repeat.
-- **Get Info** (⌘I) shows a song's details, like its name, artist and album, and lets you change
-  them. Changes to songs in your Music library are saved through the Music app, so Music shows
-  them too.
-- **Checkboxes** work like in iTunes. When a list plays through or shuffles, unchecked songs are
-  skipped. Double-click one to play it anyway. ⌘-click a box to check or uncheck every song.
-- **Add Folder** (⌘O, or the + button) adds folders of music from any drive. Tick **Also add to
-  the Music app** to give the songs to Music too. With Sync Library on, they then reach your other
-  devices. If Music turns down some files, OldTunes keeps them and tells you which ones.
-- **On This Mac**, in the list on the left, shows only the songs stored on this Mac.
-- **Playlists** from the Music app show on the left, and **Browse** sorts your music by genre,
-  artist and album. Right-click a playlist to make a new one or a folder, or to rename, copy,
-  download or delete it. **File ▸ New Playlist** (⌘N) also makes one. These changes happen in
-  the Music app, so they reach your other devices too. Smart playlists can't be copied.
-- **Add songs to a playlist** by dragging them onto it, in the list on the left. Drag sideways:
-  dragging up or down still selects more songs. Or right-click the songs and pick a playlist
-  under **Add to Playlist**. To put them in a new playlist, pick **New Playlist** at the top of
-  that menu, or choose **File ▸ New Playlist from Selection** (⇧⌘N), then type its name. The
-  songs show up in the playlist as the Music app adds them.
-  - Only your own plain playlists take songs, not smart playlists, folders, Purchased, or
-    playlists you added from Apple Music.
-  - A song that's already in a playlist isn't added again.
-  - Songs from a folder you added that the Music app doesn't have can't go in a playlist.
-    OldTunes tells you how to give them to Music.
-  - Adding more than 500 songs at once asks first.
-  - Adding a lot of songs takes a while. Other playlist changes wait until it's done. Quitting
-    the Music app stops it.
-  - If a change that was waiting asks you something first, or opens a new playlist's name, it
-    waits until you've finished typing a playlist's name. A message that something went wrong
-    can still come up.
-  - If some songs don't go in, OldTunes tells you which ones, in one message at the end. While
-    you're typing a playlist's name, the message waits until you've finished. If the Music app
-    was too slow to answer about a song, the message says that song may still go in.
-- **Remove songs from a playlist.** Select songs in a plain playlist, then press **Delete** or
-  choose **Edit ▸ Clear**. You can also right-click the selection and choose **Clear**.
-  Click **Remove** to confirm. The songs stay in your library and other playlists.
-  The Music app receives the change too. With Sync Library on, the change reaches your other devices.
-  - Smart playlists and Genius playlists do not support this command.
-  - OldTunes shows each song once per playlist. Removing that row removes every copy of that song from the playlist.
-- **Download iCloud songs** to your Mac. Right-click songs ▸ **Download**, or select them and
-  choose **File ▸ Download**. To download a playlist's iCloud songs, right-click the playlist ▸
-  **Download**. Songs already on your Mac are left alone. While a song downloads, the little
-  cloud at the end of its name turns blue (on a selected song it stays white). When the song is
-  on your Mac, the cloud goes away and the song shows in On This Mac.
-  - During a big download, a song can keep its blue cloud for a few minutes after it arrives.
-  - A big download (more than 100 songs, or more than 2 GB) asks first. It says how much space
-    the songs need and how much your Mac has free.
-  - While OldTunes is still asking the Music app for songs, File ▸ Download reads **Stop
-    Downloading**. Songs it has already asked for keep coming.
-  - If the Music app turns down three songs in a row for the same reason before it has taken
-    any, OldTunes stops asking for the rest and tells you why.
-  - Leave the Music app open while songs download. If you quit it, OldTunes stops and tells you
-    which songs didn't come down. They're still in iCloud.
-  - If no song comes down for about 15 minutes, OldTunes stops waiting and tells you which ones
-    didn't. Time your Mac spends asleep doesn't count. When every song comes down, it says
-    nothing.
-  - A message about downloads waits while you're typing a playlist's name. Then it names only the
-    songs that still haven't come down.
-  - Only the Music app can remove a download.
-  - Songs you added from Apple Music come down protected, so only the Music app can play their
-    files. Other songs can come down protected too when the Music app downloads at Lossless
-    quality. OldTunes keeps playing those songs from iCloud.
-  - A dimmed song, whose file is missing, can't be downloaded from OldTunes.
-- **Light or dark.** In OldTunes ▸ Settings (⌘,), pick Light (the 2005 look), Dark, or Match
-  System, which follows your Mac. Match System is the default.
-- **Sound Check**, also in Settings, plays every song about equally loud, using the levels the
-  Music app measured. It can raise quiet files above their original level. iCloud songs it can
-  only turn down, so a quiet iCloud song plays at its own level. Sound Check is off until you
-  turn it on.
-- **Its own volume.** The volume slider (or ⌘↑ and ⌘↓) changes only OldTunes, not your whole Mac.
-  OldTunes remembers it.
-- **Visualizer.** Click the flower button at the bottom right, or press ⌘T, to swap the song list
-  for moving light that follows the music, as iTunes 4.9 did. ⇧⌘F fills the screen with it, and
-  Esc comes back. Inside it, press H to see its keys; R picks a new look. On a screen that can
-  show HDR, its brightest colours glow brighter than white, and Settings ▸ Visualizer turns that
-  off. Needs macOS 14.4 or later. It's based on [Geiss HDR](https://www.geisswerks.com/geiss_hdr)
-  by Ryan Geiss.
-
-  <img src="docs/visualizer-wave.jpg" width="49%" alt="The visualizer: a red and yellow wave across dark blue">
-  <img src="docs/visualizer-ring.jpg" width="49%" alt="The visualizer: a ring of green light">
-  <img src="docs/visualizer-zoom.jpg" width="49%" alt="The visualizer: pink light streaming out from the middle">
-  <img src="docs/visualizer-stars.jpg" width="49%" alt="The visualizer: an orange wave through blue specks">
-
-  *Stills from the visualizer, based on Geiss HDR by Ryan Geiss.*
+- **Sort.** Click a column title to sort by it, and OldTunes remembers your choice.
+- **Shuffle and repeat.** Shuffle the list, and repeat all of it or just one song.
+- **Dock menu.** Right-click the Dock icon to see what's playing, pause, skip, shuffle or repeat.
+- **Get Info.** See and change a song's details, like its name, artist and album.
+- **Checkboxes.** Like in iTunes, unchecked songs are skipped when a list plays or shuffles.
+- **Add Folder.** Add folders of music from any drive, and give the songs to Music if you like.
+- **On This Mac.** Shows only the songs stored on this Mac.
+- **Playlists.** See your Music playlists, make new ones, and rename, copy or delete them.
+- **Browse.** Sorts your music by genre, artist and album.
+- **Add songs to a playlist.** Drag them onto a playlist, or right-click them and pick one.
+- **Remove songs from a playlist.** The songs stay in your library and your other playlists.
+- **Download iCloud songs.** Save songs, or a whole playlist, to your Mac.
+- **Light or dark.** Choose Light (the 2005 look), Dark, or Match System in Settings.
+- **Sound Check.** Plays every song about equally loud, but can't make quiet iCloud songs louder.
+- **Its own volume.** The volume slider changes only OldTunes, not your whole Mac.
+- **Visualizer.** Based on [Geiss HDR](https://www.geisswerks.com/geiss_hdr) by Ryan Geiss, it turns the music into moving light.
 
 ## Keys
 
@@ -209,6 +144,9 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
   It still needs a reliable match between local playlists and their cloud IDs.
   See the [prototype status and checks](docs/DEVELOPMENT.md#private-web-playlist-prototype).
 - **The equalizer and eject buttons** are only for looks.
+- **Songs that are in a playlist twice** show once, and removing one removes every copy.
+- **Removing downloads.** Only the Music app can remove a downloaded song.
+- **Protected downloads**, like Apple Music songs, still play from iCloud, not from your Mac.
 
 ---
 
