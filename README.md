@@ -6,10 +6,12 @@ iCloud and were never downloaded ("iCloud songs" below), plus music files on you
 
 ![OldTunes playing a song](docs/screenshot.png)
 
+<p>
 <img src="docs/visualizer-wave.jpg" width="49%" alt="The visualizer: a red and yellow wave across dark blue">
 <img src="docs/visualizer-ring.jpg" width="49%" alt="The visualizer: a ring of green light">
 <img src="docs/visualizer-zoom.jpg" width="49%" alt="The visualizer: pink light streaming out from the middle">
 <img src="docs/visualizer-stars.jpg" width="49%" alt="The visualizer: an orange wave through blue specks">
+</p>
 
 *Stills from the visualizer, based on Geiss HDR by Ryan Geiss.*
 
