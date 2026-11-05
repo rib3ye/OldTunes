@@ -30,59 +30,6 @@ You need macOS 14 or later (the visualizer needs macOS 14.4). There's nothing to
 oldTunes uses the Apple Account the Music app already uses on your Mac. To play iCloud songs,
 turn on Sync Library in the Music app (Music ▸ Settings ▸ General).
 
-## What macOS asks for, and why
-
-macOS keeps every app away from your music, your other apps and your Mac's sound until you say
-yes. oldTunes asks for two things, each only the first time it needs it.
-
-### Media & Apple Music
-
-**When:** the first time you open oldTunes.
-
-**Why:** to see your music library and playlists, and to play your Apple Music and iCloud songs.
-Without it, oldTunes can't show your music.
-
-**If you said no:** open System Settings ▸ Privacy & Security ▸ Media & Apple Music and turn on
-oldTunes. Then quit and reopen oldTunes: macOS only applies the change after a restart.
-
-### Control the Music app
-
-**When:** the first time you edit a song's details, change a playlist, download a song, or add
-songs to the Music app.
-
-**Why:** oldTunes makes those changes through the Music app, so Music and your other devices
-show them too. Downloads go through the Music app as well: it does the downloading and keeps the
-files in its own folder. If the Music app isn't open when oldTunes needs it, oldTunes opens it
-out of sight. oldTunes never uses this to play anything in Music.
-
-**If you said no:** oldTunes can't save those changes or download songs. Turn it on in System
-Settings ▸ Privacy & Security ▸ Automation ▸ oldTunes ▸ Music.
-
-### Nothing else
-
-oldTunes doesn't ask for the microphone, Screen Recording or System Audio Recording. Older
-versions asked for System Audio Recording to set the volume of iCloud songs. This one sets it
-without listening to them. If you allowed it before, you can turn it off: open System Settings ▸
-Privacy & Security ▸ Screen & System Audio Recording, and under System Audio Recording Only,
-turn off oldTunes.
-
-The visualizer hears the music without any permission. While it's on, macOS counts oldTunes as
-sharing its own window, so you may see the screen-sharing icon in the menu bar, and notifications
-may wait until you turn the visualizer off.
-
-### Your folders
-
-oldTunes runs in macOS's App Sandbox, the same safety box that apps from the Mac App Store run in.
-It can open your Music folder and the folders you pick with Add Folder, and nothing else on your
-Mac. Picking a folder is the permission, so there's nothing else to turn on.
-
-- **Updating from an older oldTunes?** Your settings and library come along. Folders you added
-  before need picking once more: oldTunes asks when it opens and shows you each one. Click
-  **Allow**. Until then their songs show as missing, but nothing is removed.
-- **Songs on another drive?** If the Music app keeps your songs outside your Music folder,
-  oldTunes plays them from iCloud when it can. If one won't open, add the folder it's in with
-  Add Folder.
-
 ## What it does
 
 - **Plays your whole library.** Songs on your Mac and iCloud songs play from the same list.
@@ -150,6 +97,59 @@ Mac. Picking a folder is the permission, so there's nothing else to turn on.
 - **Songs that are in a playlist twice** show once, and removing one removes every copy.
 - **Removing downloads.** Only the Music app can remove a downloaded song.
 - **Protected downloads**, like Apple Music songs, still play from iCloud, not from your Mac.
+
+## What macOS asks for, and why
+
+macOS keeps every app away from your music, your other apps and your Mac's sound until you say
+yes. oldTunes asks for two things, each only the first time it needs it.
+
+### Media & Apple Music
+
+**When:** the first time you open oldTunes.
+
+**Why:** to see your music library and playlists, and to play your Apple Music and iCloud songs.
+Without it, oldTunes can't show your music.
+
+**If you said no:** open System Settings ▸ Privacy & Security ▸ Media & Apple Music and turn on
+oldTunes. Then quit and reopen oldTunes: macOS only applies the change after a restart.
+
+### Control the Music app
+
+**When:** the first time you edit a song's details, change a playlist, download a song, or add
+songs to the Music app.
+
+**Why:** oldTunes makes those changes through the Music app, so Music and your other devices
+show them too. Downloads go through the Music app as well: it does the downloading and keeps the
+files in its own folder. If the Music app isn't open when oldTunes needs it, oldTunes opens it
+out of sight. oldTunes never uses this to play anything in Music.
+
+**If you said no:** oldTunes can't save those changes or download songs. Turn it on in System
+Settings ▸ Privacy & Security ▸ Automation ▸ oldTunes ▸ Music.
+
+### Nothing else
+
+oldTunes doesn't ask for the microphone, Screen Recording or System Audio Recording. Older
+versions asked for System Audio Recording to set the volume of iCloud songs. This one sets it
+without listening to them. If you allowed it before, you can turn it off: open System Settings ▸
+Privacy & Security ▸ Screen & System Audio Recording, and under System Audio Recording Only,
+turn off oldTunes.
+
+The visualizer hears the music without any permission. While it's on, macOS counts oldTunes as
+sharing its own window, so you may see the screen-sharing icon in the menu bar, and notifications
+may wait until you turn the visualizer off.
+
+### Your folders
+
+oldTunes runs in macOS's App Sandbox, the same safety box that apps from the Mac App Store run in.
+It can open your Music folder and the folders you pick with Add Folder, and nothing else on your
+Mac. Picking a folder is the permission, so there's nothing else to turn on.
+
+- **Updating from an older oldTunes?** Your settings and library come along. Folders you added
+  before need picking once more: oldTunes asks when it opens and shows you each one. Click
+  **Allow**. Until then their songs show as missing, but nothing is removed.
+- **Songs on another drive?** If the Music app keeps your songs outside your Music folder,
+  oldTunes plays them from iCloud when it can. If one won't open, add the folder it's in with
+  Add Folder.
 
 ---
 
